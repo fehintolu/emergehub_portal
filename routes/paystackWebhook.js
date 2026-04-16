@@ -95,12 +95,16 @@ router.post(
       await client.query('COMMIT');
 
       const base = process.env.BASE_URL || '';
-      await sendPaymentConfirmedEmail({
-        to: pRow.email,
-        name: pRow.full_name,
-        invoiceNumber: pRow.invoice_number,
-        portalUrl: base,
-      });
+      try {
+        await sendPaymentConfirmedEmail({
+          to: pRow.email,
+          name: pRow.full_name,
+          invoiceNumber: pRow.invoice_number,
+          portalUrl: base,
+        });
+      } catch (mailErr) {
+        console.error('webhook mail', mailErr);
+      }
     } catch (e) {
       await client.query('ROLLBACK');
       console.error('webhook', e);
