@@ -1,0 +1,71 @@
+<h2><%= m.full_name %></h2>
+<p><%= m.email %> · <%= m.phone %></p>
+<p>Joined <%= formatDate(m.created_at) %> <% if (m.suspended_at) { %><span class="badge badge-warn">Suspended</span><% } %></p>
+
+<form method="post" action="/admin/members/<%= m.id %>/note">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+  <label>Internal notes</label>
+  <textarea name="internal_notes"><%= m.internal_notes || '' %></textarea>
+  <button type="submit" class="btn btn-secondary">Save notes</button>
+</form>
+
+<div class="cta-row">
+  <% if (!m.suspended_at) { %>
+    <form method="post" action="/admin/members/<%= m.id %>/suspend" onsubmit="return confirm('Suspend?');">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+      <button type="submit" class="btn btn-ghost">Suspend</button>
+    </form>
+  <% } else { %>
+    <form method="post" action="/admin/members/<%= m.id %>/reactivate">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+      <button type="submit" class="btn btn-primary">Reactivate</button>
+    </form>
+  <% } %>
+</div>
+
+<h3>Plan</h3>
+<ul><% plans.forEach(function (p) { %>
+  <li><%= p.name %> — <%= p.status %> · <%= formatDate(p.started_at) %> → <%= p.renewal_at ? formatDate(p.renewal_at) : '—' %></li>
+<% }); %></ul>
+<form method="post" action="/admin/members/<%= m.id %>/plan">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+  <select name="tier_id"><% tiers.forEach(function (t) { %><option value="<%= t.id %>"><%= t.name %></option><% }); %></select>
+  <input type="date" name="started_at" />
+  <input type="date" name="renewal_at" />
+  <select name="status"><option>active</option><option>suspended</option><option>pending_renewal</option></select>
+  <button type="submit" class="btn btn-primary">Set plan</button>
+</form>
+
+<h3>Service requests</h3>
+<ul><% svc.forEach(function (r) { %>
+  <li><a href="/admin/service-requests/<%= r.id %>"><%= r.service_name %></a> — <%= r.status %></li>
+<% }); %></ul>
+
+<h3>Invoices</h3>
+<ul><% inv.forEach(function (i) { %>
+  <li><a href="/admin/invoices/<%= i.id %>"><%= i.invoice_number %></a> — <%= formatNgn(i.total_cents) %> — <%= i.status %></li>
+<% }); %></ul>
+
+<h3>Documents</h3>
+<form method="post" action="/admin/members/<%= m.id %>/documents" enctype="multipart/form-data">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+  <input type="file" name="file" required accept=".pdf,.jpg,.jpeg,.png,.docx" />
+  <button type="submit" class="btn btn-secondary">Upload to member</button>
+</form>
+<ul><% docs.forEach(function (d) { %>
+  <li><a href="/admin/documents/download/<%= d.id %>"><%= d.original_name %></a></li>
+<% }); %></ul>
+
+<h3>Support tickets</h3>
+<ul><% tickets.forEach(function (t) { %>
+  <li><a href="/admin/support/<%= t.id %>"><%= t.subject %></a> — <%= t.status %></li>
+<% }); %></ul>
+
+<h3>Notify member</h3>
+<form method="post" action="/admin/members/<%= m.id %>/notify">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+  <input type="text" name="title" placeholder="Title" required />
+  <textarea name="message" placeholder="Message" required></textarea>
+  <input type="text" name="link_url" placeholder="Optional link path e.g. /billing" />
+  <button type="submit" class="btn btn-primary">Send</button>
+</form>

@@ -1,0 +1,17 @@
+<h2 style="margin-top:0;">Member sign in</h2>
+<% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
+<form method="post" action="/auth/login">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+  <input type="hidden" name="next" value="<%= next %>" />
+  <div class="form-row">
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" required autocomplete="username" />
+  </div>
+  <div class="form-row">
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" required autocomplete="current-password" />
+  </div>
+  <button type="submit" class="btn btn-primary">Sign in</button>
+</form>
+<p><a href="/auth/forgot-password">Forgot password?</a></p>
+<p>No account? <a href="/auth/register">Register</a></p>

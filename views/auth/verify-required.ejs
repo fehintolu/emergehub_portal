@@ -1,0 +1,8 @@
+<div class="card">
+  <h2 style="margin-top:0;">Verify your email</h2>
+  <p>Please verify your email address to use the member portal.</p>
+  <form method="post" action="/auth/resend-verification">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+    <button type="submit" class="btn btn-secondary">Resend verification email</button>
+  </form>
+</div>

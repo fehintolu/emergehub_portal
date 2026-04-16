@@ -1,0 +1,21 @@
+<h2>Request: <%= service.name %></h2>
+<p>Category: <%= service.category_name %></p>
+<% if (typeof query !== 'undefined' && query.err === 'upload') { %>
+  <div class="alert alert-error">File upload failed validation.</div>
+<% } %>
+<form method="post" action="/services/request/<%= service.id %>" enctype="multipart/form-data">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+  <div class="form-row">
+    <label>Describe your requirement</label>
+    <textarea name="description" required></textarea>
+  </div>
+  <div class="form-row">
+    <label>Additional details</label>
+    <textarea name="extra_details" placeholder="CAC details, virtual office needs, etc."></textarea>
+  </div>
+  <div class="form-row">
+    <label>Attachment (optional, PDF/JPG/PNG/DOCX, max 10MB)</label>
+    <input type="file" name="attachment" accept=".pdf,.jpg,.jpeg,.png,.docx" />
+  </div>
+  <button type="submit" class="btn btn-primary">Submit request</button>
+</form>

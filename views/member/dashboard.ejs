@@ -1,0 +1,42 @@
+<% if (showOnboarding) { %>
+  <div class="card" style="border-left:4px solid var(--color-accent);">
+    <strong>Get started</strong>
+    <p>Explore our workspaces and services — request a plan or a service when you are ready.</p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="/services?tab=request">Request a service</a>
+      <a class="btn btn-ghost" href="/workspace">View workspace</a>
+    </div>
+  </div>
+<% } %>
+
+<div class="card-grid">
+  <div class="card stat-card"><span>Active services</span><strong><%= stats.activeServices %></strong></div>
+  <div class="card stat-card"><span>Pending requests</span><strong><%= stats.pendingRequests %></strong></div>
+  <div class="card stat-card">
+    <span>Unpaid invoices</span>
+    <strong><%= stats.unpaidCount %></strong>
+    <small><%= formatNgn(stats.unpaidTotalCents) %></small>
+  </div>
+  <div class="card stat-card">
+    <span>Plan</span>
+    <strong><%= stats.daysRemaining != null ? stats.daysRemaining + ' days' : (stats.hasActivePlan ? '—' : 'No active plan') %></strong>
+    <small><%= stats.planLabel %></small>
+  </div>
+</div>
+
+<div class="cta-row" style="margin-top:1rem;">
+  <a class="btn btn-primary" href="/services?tab=request">Request a Service</a>
+  <a class="btn btn-secondary" href="/workspace">Book a Meeting Room</a>
+  <a class="btn btn-ghost" href="/billing">Pay Outstanding Invoices</a>
+</div>
+
+<h3>Recent activity</h3>
+<% if (!activity.length) { %>
+  <p>No recent activity.</p>
+<% } else { %>
+  <ul style="padding-left:1.1rem;">
+    <% activity.forEach(function (a) { %>
+      <li><%= formatDateTime(a.created_at) %> — <%= a.title %><% if (a.body) { %>: <%= a.body %><% } %></li>
+    <% }); %>
+  </ul>
+<% } %>

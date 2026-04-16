@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title><%= title %> — Member Portal</title>
+  <link rel="stylesheet" href="/css/portal.css" />
+</head>
+<body class="portal-body">
+  <div class="portal-shell">
+    <aside class="portal-sidebar">
+      <div class="portal-brand">EmergeHub <span>Portal</span></div>
+      <nav>
+        <a href="/dashboard" class="<%= title === 'Dashboard' ? 'is-active' : '' %>">Dashboard</a>
+        <a href="/workspace" class="<%= title === 'My workspace' ? 'is-active' : '' %>">My Workspace</a>
+        <a href="/services" class="<%= title === 'Services' || (typeof title === 'string' && title.indexOf('Request') === 0) ? 'is-active' : '' %>">Services</a>
+        <a href="/billing" class="<%= title === 'Payments & billing' ? 'is-active' : '' %>">Payments</a>
+        <a href="/documents" class="<%= title === 'Documents' ? 'is-active' : '' %>">Documents</a>
+        <a href="/support" class="<%= title === 'Support' || title === 'New ticket' ? 'is-active' : '' %>">Support</a>
+        <a href="/settings/profile" class="<%= title === 'Settings' ? 'is-active' : '' %>">Settings</a>
+      </nav>
+      <form method="post" action="/auth/logout" style="margin-top:1.5rem;padding:0 1.25rem;">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+        <button type="submit" class="link-btn" style="color:#fff;">Log out</button>
+      </form>
+    </aside>
+    <div class="portal-main">
+      <header class="portal-topbar">
+        <h1 style="margin:0;font-size:1.25rem;"><%= title %></h1>
+        <div style="display:flex;align-items:center;gap:1rem;">
+          <a href="/notifications" class="notif-bell" title="Notifications">&#128276;
+            <% if (typeof notifCount === 'number' && notifCount > 0) { %>
+              <span class="count"><%= notifCount > 9 ? '9+' : notifCount %></span>
+            <% } %>
+          </a>
+        </div>
+      </header>
+      <main class="portal-content"><%- body %></main>
+    </div>
+  </div>
+</body>
+</html>

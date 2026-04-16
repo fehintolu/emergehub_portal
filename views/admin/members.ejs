@@ -1,0 +1,20 @@
+<p><a class="btn btn-primary" href="/admin/members/new">Add member</a></p>
+<form method="get" action="/admin/members" style="margin-bottom:1rem;">
+  <input type="search" name="q" placeholder="Search name or email" value="<%= typeof query !== 'undefined' && query.q ? query.q : '' %>" />
+  <button type="submit" class="btn btn-secondary">Search</button>
+</form>
+<div class="table-wrap">
+  <table class="data">
+    <thead><tr><th>Name</th><th>Email</th><th>Plan</th><th>Joined</th></tr></thead>
+    <tbody>
+      <% members.forEach(function (m) { %>
+        <tr>
+          <td><a href="/admin/members/<%= m.id %>"><%= m.full_name %></a></td>
+          <td><%= m.email %></td>
+          <td><%= m.tier_name || '—' %> (<%= m.plan_status || '—' %>)</td>
+          <td><%= formatDate(m.created_at) %></td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>

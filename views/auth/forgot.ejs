@@ -1,0 +1,16 @@
+<h2 style="margin-top:0;">Forgot password</h2>
+<% if (sent) { %>
+  <p>If an account exists for that email, we sent reset instructions.</p>
+  <p><a href="/auth/login">Sign in</a></p>
+<% } else { %>
+  <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
+  <form method="post" action="/auth/forgot-password">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+    <div class="form-row">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" required />
+    </div>
+    <button type="submit" class="btn btn-primary">Send reset link</button>
+  </form>
+<% } %>
+<p><a href="/auth/login">Back</a></p>

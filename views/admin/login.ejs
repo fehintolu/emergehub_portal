@@ -1,0 +1,10 @@
+<h2 style="margin-top:0;">Portal admin</h2>
+<% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
+<form method="post" action="/admin/login">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+  <input type="hidden" name="next" value="<%= next %>" />
+  <div class="form-row"><label>Username</label><input name="username" required autocomplete="username" /></div>
+  <div class="form-row"><label>Password</label><input type="password" name="password" required autocomplete="current-password" /></div>
+  <button type="submit" class="btn btn-primary">Sign in</button>
+</form>
+<p><small>Members cannot use this login.</small></p>

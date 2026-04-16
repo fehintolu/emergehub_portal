@@ -1,0 +1,38 @@
+<% if (sr.action_required_member) { %>
+  <div class="alert alert-error" style="border-left:4px solid var(--color-accent);">
+    <strong>Action required</strong> — please check messages below or upload requested documents.
+  </div>
+<% } %>
+<h2><%= sr.service_name %></h2>
+<p><span class="badge"><%= sr.status %></span> · <%= sr.category_name %></p>
+<p>Requested <%= formatDateTime(sr.created_at) %> · Updated <%= formatDateTime(sr.updated_at) %></p>
+
+<h3>Timeline</h3>
+<div class="stepper">
+  <% updates.forEach(function (u) { %>
+    <span><%= u.stage %> · <%= formatDateTime(u.created_at) %></span>
+  <% }); %>
+</div>
+
+<h3>Updates</h3>
+<ul><% updates.forEach(function (u) { %>
+  <li><%= formatDateTime(u.created_at) %> — <strong><%= u.stage %></strong><% if (u.note) { %>: <%= u.note %><% } %></li>
+<% }); %></ul>
+
+<h3>Documents</h3>
+<ul><% docs.forEach(function (d) { %>
+  <li><a href="/documents/download/<%= d.id %>"><%= d.original_name %></a> · <%= formatDateTime(d.created_at) %></li>
+<% }); %></ul>
+
+<h3>Messages</h3>
+<% msgs.forEach(function (m) { %>
+  <div class="card" style="background:#fff;">
+    <small><%= m.sender_type %> · <%= formatDateTime(m.created_at) %></small>
+    <p><%= m.body %></p>
+  </div>
+<% }); %>
+<form method="post" action="/services/<%= sr.id %>/message">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+  <div class="form-row"><textarea name="body" required placeholder="Message EmergeHub"></textarea></div>
+  <button type="submit" class="btn btn-primary">Send message</button>
+</form>

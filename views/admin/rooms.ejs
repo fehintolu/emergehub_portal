@@ -1,0 +1,31 @@
+<h3>Pending approvals</h3>
+<% rows.filter(function (b) { return b.status === 'pending'; }).forEach(function (b) { %>
+  <div class="card">
+    <strong><%= b.room_name %></strong> — <%= b.full_name %> · <%= formatDateTime(b.starts_at) %> → <%= formatDateTime(b.ends_at) %>
+    <form method="post" action="/admin/rooms/<%= b.id %>/approve" style="display:inline;">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+      <input type="text" name="note" placeholder="Note" />
+      <button type="submit" class="btn btn-primary">Approve</button>
+    </form>
+    <form method="post" action="/admin/rooms/<%= b.id %>/reject" style="display:inline;">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+      <button type="submit" class="btn btn-ghost">Reject</button>
+    </form>
+  </div>
+<% }); %>
+
+<h3>Create booking (member)</h3>
+<form method="post" action="/admin/rooms/new">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+  <div class="form-row"><label>Member ID</label><input name="member_id" required placeholder="uuid" /></div>
+  <div class="form-row"><label>Room</label><input name="room_name" required /></div>
+  <div class="form-row"><label>Start</label><input type="datetime-local" name="starts_at" required /></div>
+  <div class="form-row"><label>End</label><input type="datetime-local" name="ends_at" required /></div>
+  <div class="form-row"><label>Purpose</label><input name="purpose" /></div>
+  <button type="submit" class="btn btn-secondary">Create</button>
+</form>
+
+<h3>Upcoming (all)</h3>
+<ul><% rows.forEach(function (b) { %>
+  <li><%= b.room_name %> — <%= b.full_name %> · <%= formatDateTime(b.starts_at) %> (<%= b.status %>)</li>
+<% }); %></ul>

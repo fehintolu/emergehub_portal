@@ -1,0 +1,9 @@
+<h2>Add member</h2>
+<form method="post" action="/admin/members/new">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+  <div class="form-row"><label>Full name</label><input name="full_name" required /></div>
+  <div class="form-row"><label>Email</label><input type="email" name="email" required /></div>
+  <div class="form-row"><label>Phone</label><input name="phone" required /></div>
+  <div class="form-row"><label>Initial password</label><input type="password" name="password" minlength="8" required /></div>
+  <button type="submit" class="btn btn-primary">Create</button>
+</form>

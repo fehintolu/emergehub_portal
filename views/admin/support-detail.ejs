@@ -1,0 +1,33 @@
+<h2><%= ticket.subject %></h2>
+<p><%= ticket.full_name %> · <%= ticket.email %></p>
+<form method="post" action="/admin/support/<%= ticket.id %>/assign">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+  <select name="admin_id">
+    <option value="">Unassigned</option>
+    <% admins.forEach(function (a) { %>
+      <option value="<%= a.id %>" <%= ticket.assigned_admin_id === a.id ? 'selected' : '' %>><%= a.username %></option>
+    <% }); %>
+  </select>
+  <button type="submit" class="btn btn-secondary">Assign</button>
+</form>
+<form method="post" action="/admin/support/<%= ticket.id %>/status" style="margin:0.5rem 0;">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+  <select name="status">
+    <% ['Open','In Progress','Resolved','Closed'].forEach(function (s) { %>
+      <option value="<%= s %>" <%= ticket.status === s ? 'selected' : '' %>><%= s %></option>
+    <% }); %>
+  </select>
+  <button type="submit" class="btn btn-primary">Update status</button>
+</form>
+<% msgs.forEach(function (m) { %>
+  <div class="card" style="<%= m.internal_note ? 'opacity:0.7;border-left:3px solid #999;' : '' %>">
+    <small><%= m.sender_type %> <% if (m.internal_note) { %>(internal)<% } %></small>
+    <p><%= m.body %></p>
+  </div>
+<% }); %>
+<form method="post" action="/admin/support/<%= ticket.id %>/reply">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+  <textarea name="body" required></textarea>
+  <label><input type="checkbox" name="internal" value="1" /> Internal note only</label>
+  <button type="submit" class="btn btn-primary">Send</button>
+</form>

@@ -1,0 +1,27 @@
+<div class="card-grid">
+  <div class="card stat-card"><span>Members</span><strong><%= stats.members %></strong></div>
+  <div class="card stat-card"><span>Active plans</span><strong><%= stats.activePlans %></strong></div>
+  <div class="card stat-card"><span>Pending service requests</span><strong><%= stats.pendingSvc %></strong></div>
+  <div class="card stat-card"><span>Unpaid invoices total</span><strong><%= formatNgn(stats.unpaidCents) %></strong></div>
+  <div class="card stat-card"><span>Open tickets</span><strong><%= stats.openTickets %></strong></div>
+</div>
+
+<h3>New service requests</h3>
+<ul><% queueNewSvc.forEach(function (r) { %>
+  <li><a href="/admin/service-requests/<%= r.id %>"><%= r.service_name %> — <%= r.full_name %></a> · <%= formatDateTime(r.created_at) %></li>
+<% }); %></ul>
+
+<h3>Awaiting payment confirmation</h3>
+<ul><% queueBank.forEach(function (i) { %>
+  <li><a href="/admin/invoices/<%= i.id %>"><%= i.invoice_number %> — <%= i.full_name %></a></li>
+<% }); %></ul>
+
+<h3>Open support tickets</h3>
+<ul><% queueTickets.forEach(function (t) { %>
+  <li><a href="/admin/support/<%= t.id %>"><%= t.subject %> — <%= t.full_name %></a></li>
+<% }); %></ul>
+
+<h3>Pending room bookings</h3>
+<ul><% queueRooms.forEach(function (b) { %>
+  <li><a href="/admin/rooms"><%= b.room_name %> — <%= b.full_name %> · <%= formatDateTime(b.starts_at) %></a></li>
+<% }); %></ul>

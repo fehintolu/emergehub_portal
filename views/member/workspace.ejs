@@ -1,0 +1,88 @@
+<% if (query && query.msg === 'plan') { %>
+  <div class="alert alert-success">Plan request submitted. Our team will contact you.</div>
+<% } %>
+<% if (query && query.msg === 'booked') { %>
+  <div class="alert alert-success">Room booking submitted for approval.</div>
+<% } %>
+
+<% if (plan) { %>
+  <div class="card">
+    <h3 style="margin-top:0;">Current plan</h3>
+    <p><strong><%= plan.name %></strong> — <%= plan.status %></p>
+    <p><%= plan.description %></p>
+    <p>Price (display): <%= plan.price_display %> · <%= plan.hours %></p>
+    <p>Started: <%= formatDate(plan.started_at) %> · Renewal: <%= plan.renewal_at ? formatDate(plan.renewal_at) : '—' %></p>
+    <% if (plan.desk_or_office) { %><p>Assignment: <%= plan.desk_or_office %></p><% } %>
+  </div>
+  <div class="card">
+    <h3>Meeting rooms</h3>
+    <h4>Upcoming</h4>
+    <% if (!bookingsUp.length) { %><p>None.</p><% } %>
+    <ul><% bookingsUp.forEach(function (b) { %>
+      <li><%= formatDateTime(b.starts_at) %> — <%= b.room_name %> (<%= b.status %>)</li>
+    <% }); %></ul>
+    <h4>Past</h4>
+    <ul><% bookingsPast.forEach(function (b) { %>
+      <li><%= formatDateTime(b.starts_at) %> — <%= b.room_name %></li>
+    <% }); %></ul>
+    <h4>Book a room</h4>
+    <form method="post" action="/workspace/book-room">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+      <div class="form-row">
+        <label>Room</label>
+        <select name="room_name" required>
+          <% roomNames.forEach(function (r) { %><option value="<%= r %>"><%= r %></option><% }); %>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>Start</label>
+        <input type="datetime-local" name="starts_at" required />
+      </div>
+      <div class="form-row">
+        <label>Duration (minutes)</label>
+        <input type="number" name="duration_minutes" value="60" min="30" step="30" />
+      </div>
+      <div class="form-row">
+        <label>Purpose</label>
+        <input type="text" name="purpose" />
+      </div>
+      <button type="submit" class="btn btn-primary">Submit booking</button>
+    </form>
+  </div>
+<% } else { %>
+  <div class="card">
+    <h3 style="margin-top:0;">No active plan</h3>
+    <p>Choose a membership tier to request:</p>
+    <% tiers.forEach(function (t) { %>
+      <div class="card" style="background:#fff;">
+        <strong><%= t.name %></strong>
+        <p><%= t.description %></p>
+        <p><%= t.price_display %></p>
+        <form method="post" action="/workspace/plan-request">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+          <input type="hidden" name="tier_id" value="<%= t.id %>" />
+          <div class="form-row"><label>Note (optional)</label><input type="text" name="note" /></div>
+          <button type="submit" class="btn btn-primary">Request this plan</button>
+        </form>
+      </div>
+    <% }); %>
+  </div>
+<% } %>
+
+<% if (plan) { %>
+<div class="card">
+  <h3>Change plan</h3>
+  <p>To upgrade or change plan, pick a tier and we will contact you.</p>
+  <form method="post" action="/workspace/plan-request">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+    <div class="form-row">
+      <label>Tier</label>
+      <select name="tier_id" required>
+        <% tiers.forEach(function (t) { %><option value="<%= t.id %>"><%= t.name %></option><% }); %>
+      </select>
+    </div>
+    <div class="form-row"><label>Message</label><input type="text" name="note" placeholder="What would you like to change?" /></div>
+    <button type="submit" class="btn btn-primary">Send request</button>
+  </form>
+</div>
+<% } %>

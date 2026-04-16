@@ -1,0 +1,80 @@
+<script src="https://js.paystack.co/v1/inline.js"></script>
+<h2>Outstanding invoices</h2>
+<% if (!outstanding.length) { %><p>None — you are up to date.</p><% } %>
+<% outstanding.forEach(function (inv) { %>
+  <div class="card" style="<%= inv.status === 'overdue' ? 'border:2px solid #b00020;' : '' %>">
+    <strong><%= inv.invoice_number %></strong>
+    <span class="badge"><%= inv.status %></span>
+    <p><%= formatNgn(inv.total_cents) %> · Due <%= formatDate(inv.due_date) %></p>
+    <% if (['unpaid','sent','overdue'].includes(inv.status)) { %>
+      <button type="button" class="btn btn-primary pay-now" data-invoice="<%= inv.id %>">Pay now</button>
+      <details style="margin-top:0.5rem;">
+        <summary>I paid by bank transfer</summary>
+        <form method="post" action="/billing/manual" enctype="multipart/form-data" style="margin-top:0.5rem;">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+          <input type="hidden" name="invoice_id" value="<%= inv.id %>" />
+          <p>Upload proof (PDF/JPG/PNG/DOCX)</p>
+          <input type="file" name="proof" required accept=".pdf,.jpg,.jpeg,.png,.docx" />
+          <button type="submit" class="btn btn-secondary">Submit</button>
+        </form>
+      </details>
+    <% } %>
+    <% if (inv.status === 'awaiting_confirmation') { %>
+      <p><em>Awaiting confirmation from EmergeHub.</em></p>
+    <% } %>
+  </div>
+<% }); %>
+
+<h2>Bank transfer</h2>
+<div class="card">
+  <p><strong><%= bankName || '—' %></strong></p>
+  <p>Account name: <%= accountName %></p>
+  <p>Account number: <%= accountNumber || '—' %></p>
+</div>
+
+<h2>Payment history</h2>
+<div class="table-wrap">
+  <table class="data">
+    <thead><tr><th>Date</th><th>Invoice</th><th>Amount</th><th>Method</th><th>Status</th><th>Receipt</th></tr></thead>
+    <tbody>
+      <% history.forEach(function (p) { %>
+        <tr>
+          <td><%= formatDateTime(p.created_at) %></td>
+          <td><%= p.invoice_number %></td>
+          <td><%= formatNgn(p.amount_cents) %></td>
+          <td><%= p.method %></td>
+          <td><%= p.status %></td>
+          <td><% if (p.status === 'completed' && p.receipt_number) { %><a href="/billing/receipt/<%= p.id %>">Receipt</a><% } else { %>—<% } %></td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>
+
+<script>
+(function () {
+  var key = <%- JSON.stringify(paystackPublicKey || '') %>;
+  document.querySelectorAll('.pay-now').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      if (!key) { alert('Paystack is not configured yet.'); return; }
+      var invoiceId = btn.getAttribute('data-invoice');
+      fetch('/billing/pay/init', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: '_csrf=' + encodeURIComponent(<%- JSON.stringify(csrfToken) %>) + '&invoice_id=' + encodeURIComponent(invoiceId),
+        credentials: 'same-origin'
+      }).then(function (r) { return r.json(); }).then(function (data) {
+        if (data.error) { alert(data.error); return; }
+        var handler = PaystackPop.setup({
+          key: data.publicKey || key,
+          email: <%- JSON.stringify(memberEmail || '') %>,
+          access_code: data.access_code,
+          callback: function () { window.location.href = '/billing?paid=1'; },
+          onClose: function () {}
+        });
+        handler.openIframe();
+      }).catch(function () { alert('Could not start payment.'); });
+    });
+  });
+})();
+</script>

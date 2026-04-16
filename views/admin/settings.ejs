@@ -1,0 +1,29 @@
+<% if (typeof query !== 'undefined' && query.msg) { %>
+  <div class="alert alert-success">Saved.</div>
+<% } %>
+<h2>Bank & Paystack</h2>
+<form method="post" action="/admin/settings">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+  <div class="form-row"><label>Bank name</label><input name="bank_name" value="<%= map.bank_name || '' %>" /></div>
+  <div class="form-row"><label>Account name</label><input name="account_name" value="<%= map.account_name || '' %>" /></div>
+  <div class="form-row"><label>Account number</label><input name="account_number" value="<%= map.account_number || '' %>" /></div>
+  <div class="form-row"><label>Default invoice due days</label><input name="default_invoice_due_days" value="<%= map.default_invoice_due_days || '7' %>" /></div>
+  <div class="form-row"><label>Meeting room names (JSON array)</label><textarea name="meeting_room_names" rows="2"><%= map.meeting_room_names || '[]' %></textarea></div>
+  <div class="form-row"><label>Meeting room hours</label><textarea name="meeting_room_hours" rows="2"><%= map.meeting_room_hours || '' %></textarea></div>
+  <div class="form-row"><label>Paystack public key</label><input name="paystack_public_key" value="<%= map.paystack_public_key || '' %>" autocomplete="off" /></div>
+  <div class="form-row"><label>Paystack secret key</label><input type="password" name="paystack_secret_key" value="<%= map.paystack_secret_key || '' %>" autocomplete="new-password" placeholder="Leave blank to keep" /></div>
+  <button type="submit" class="btn btn-primary">Save settings</button>
+</form>
+
+<h2>Admin users</h2>
+<ul><% admins.forEach(function (a) { %>
+  <li><%= a.username %> — <%= a.email %> — <%= a.active ? 'active' : 'off' %></li>
+<% }); %></ul>
+<h3>Add admin</h3>
+<form method="post" action="/admin/settings/admins">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+  <input name="username" placeholder="username" required />
+  <input name="email" type="email" placeholder="email" required />
+  <input name="password" type="password" placeholder="password min 8" minlength="8" required />
+  <button type="submit" class="btn btn-secondary">Add</button>
+</form>

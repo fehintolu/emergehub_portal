@@ -1,0 +1,28 @@
+<% if (typeof query !== 'undefined' && query.msg === 'sent') { %>
+  <div class="alert alert-success">Notifications queued.</div>
+<% } %>
+<h2>Send notification</h2>
+<form method="post" action="/admin/notifications/send">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+  <div class="form-row">
+    <label>Audience</label>
+    <select name="audience">
+      <option value="one">One member</option>
+      <option value="all">All members</option>
+      <option value="active_plan">Members with active plan</option>
+      <option value="unpaid">Members with unpaid invoices</option>
+    </select>
+  </div>
+  <div class="form-row">
+    <label>Member (if one)</label>
+    <select name="member_id">
+      <% members.forEach(function (m) { %>
+        <option value="<%= m.id %>"><%= m.full_name %></option>
+      <% }); %>
+    </select>
+  </div>
+  <div class="form-row"><label>Title</label><input name="title" required /></div>
+  <div class="form-row"><label>Message</label><textarea name="message" required></textarea></div>
+  <div class="form-row"><label>Link (optional path)</label><input name="link_url" placeholder="/billing" /></div>
+  <button type="submit" class="btn btn-primary">Send</button>
+</form>

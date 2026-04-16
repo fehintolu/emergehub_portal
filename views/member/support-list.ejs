@@ -1,0 +1,19 @@
+<p><a class="btn btn-primary" href="/support/new">Open ticket</a>
+  <a class="btn btn-ghost" href="https://wa.me/2348149041843" target="_blank" rel="noopener">Message us on WhatsApp</a></p>
+<% if (!tickets.length) { %><p>No tickets yet.</p><% } %>
+<div class="table-wrap">
+  <table class="data">
+    <thead><tr><th>Subject</th><th>Category</th><th>Opened</th><th>Status</th><th>Last update</th></tr></thead>
+    <tbody>
+      <% tickets.forEach(function (t) { %>
+        <tr>
+          <td><a href="/support/<%= t.id %>"><%= t.subject %></a></td>
+          <td><%= t.category %></td>
+          <td><%= formatDateTime(t.created_at) %></td>
+          <td><%= t.status %></td>
+          <td><%= formatDateTime(t.updated_at) %></td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>

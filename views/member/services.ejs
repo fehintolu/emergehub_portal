@@ -1,0 +1,30 @@
+<div class="tabs">
+  <a href="/services?tab=mine" class="<%= tab === 'mine' ? 'is-active' : '' %>">My Services</a>
+  <a href="/services?tab=request" class="<%= tab === 'request' ? 'is-active' : '' %>">Request a Service</a>
+</div>
+
+<% if (tab === 'mine') { %>
+  <% if (!mine.length) { %><p>No service requests yet.</p><% } %>
+  <% mine.forEach(function (r) { %>
+    <a href="/services/<%= r.id %>" style="text-decoration:none;color:inherit;">
+      <div class="card">
+        <strong><%= r.service_name %></strong>
+        <span class="badge"><%= r.status %></span>
+        <% if (r.action_required_member) { %><span class="badge badge-warn">Action required</span><% } %>
+        <p><%= r.category_name %> · Requested <%= formatDateTime(r.created_at) %></p>
+      </div>
+    </a>
+  <% }); %>
+<% } else { %>
+  <% cats.forEach(function (c) { %>
+    <h3><%= c.name %></h3>
+    <p><%= c.tagline %></p>
+    <% services.filter(function (s) { return s.category_id === c.id; }).forEach(function (s) { %>
+      <div class="card" style="background:#fff;">
+        <strong><%= s.name %></strong>
+        <p><%= s.description %></p>
+        <a class="btn btn-primary" href="/services/request/<%= s.id %>">Request</a>
+      </div>
+    <% }); %>
+  <% }); %>
+<% } %>

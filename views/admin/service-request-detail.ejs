@@ -1,0 +1,50 @@
+<p><a href="/admin/members/<%= sr.member_id %>"><%= sr.member_name %></a> · <%= sr.member_email %></p>
+<h2><%= sr.service_name %></h2>
+<p><span class="badge"><%= sr.status %></span></p>
+<p><%= sr.description %></p>
+<p><small>Phone: <%= sr.member_phone || '—' %></small></p>
+
+<h3>Status</h3>
+<form method="post" action="/admin/service-requests/<%= sr.id %>/status">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+  <select name="status">
+    <% ['Submitted','Under Review','In Progress','Action Required','Completed','Cancelled'].forEach(function (s) { %>
+      <option value="<%= s %>" <%= sr.status === s ? 'selected' : '' %>><%= s %></option>
+    <% }); %>
+  </select>
+  <label><input type="checkbox" name="action_required" value="1" <%= sr.action_required_member ? 'checked' : '' %> /> Member action required</label>
+  <textarea name="note" placeholder="Note to member timeline"></textarea>
+  <button type="submit" class="btn btn-primary">Update</button>
+</form>
+
+<h3>Assign</h3>
+<form method="post" action="/admin/service-requests/<%= sr.id %>/assign">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+  <select name="admin_id">
+    <option value="">—</option>
+    <% admins.forEach(function (a) { %>
+      <option value="<%= a.id %>" <%= sr.assigned_admin_id === a.id ? 'selected' : '' %>><%= a.username %></option>
+    <% }); %>
+  </select>
+  <button type="submit" class="btn btn-secondary">Save</button>
+</form>
+
+<h3>Timeline</h3>
+<ul><% updates.forEach(function (u) { %>
+  <li><%= formatDateTime(u.created_at) %> — <%= u.stage %><% if (u.note) { %>: <%= u.note %><% } %></li>
+<% }); %></ul>
+
+<h3>Messages</h3>
+<% msgs.forEach(function (m) { %>
+  <div class="card"><small><%= m.sender_type %></small><p><%= m.body %></p></div>
+<% }); %>
+<form method="post" action="/admin/service-requests/<%= sr.id %>/message">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+  <textarea name="body" required></textarea>
+  <button type="submit" class="btn btn-primary">Send to member</button>
+</form>
+
+<h3>Files</h3>
+<ul><% docs.forEach(function (d) { %>
+  <li><a href="/admin/documents/download/<%= d.id %>"><%= d.original_name %></a></li>
+<% }); %></ul>

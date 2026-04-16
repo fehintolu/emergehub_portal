@@ -1,0 +1,15 @@
+<div class="table-wrap">
+  <table class="data">
+    <thead><tr><th>Subject</th><th>Member</th><th>Status</th><th>Opened</th></tr></thead>
+    <tbody>
+      <% rows.forEach(function (t) { %>
+        <tr>
+          <td><a href="/admin/support/<%= t.id %>"><%= t.subject %></a></td>
+          <td><%= t.full_name %></td>
+          <td><%= t.status %></td>
+          <td><%= formatDateTime(t.created_at) %></td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>

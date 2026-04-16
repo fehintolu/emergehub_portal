@@ -1,0 +1,26 @@
+<h2><%= inv.invoice_number %></h2>
+<p><%= inv.full_name %> · <%= inv.email %></p>
+<p>Status: <span class="badge"><%= inv.status %></span> · Due <%= formatDate(inv.due_date) %></p>
+<table class="data">
+  <thead><tr><th>Description</th><th>Amount</th></tr></thead>
+  <tbody>
+    <% items.forEach(function (it) { %>
+      <tr><td><%= it.description %></td><td><%= formatNgn(it.amount_cents) %></td></tr>
+    <% }); %>
+  </tbody>
+  <tfoot><tr><th>Total</th><th><%= formatNgn(inv.total_cents) %></th></tr></tfoot>
+</table>
+<% if (inv.notes) { %><p>Notes: <%= inv.notes %></p><% } %>
+
+<% if (['unpaid','sent','overdue','awaiting_confirmation'].includes(inv.status)) { %>
+  <form method="post" action="/admin/invoices/<%= inv.id %>/paid" onsubmit="return confirm('Mark paid manually?');">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+    <button type="submit" class="btn btn-secondary">Mark paid (manual)</button>
+  </form>
+<% } %>
+<% if (inv.status === 'awaiting_confirmation') { %>
+  <form method="post" action="/admin/invoices/<%= inv.id %>/confirm-bank" style="margin-top:0.5rem;">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+    <button type="submit" class="btn btn-primary">Confirm bank transfer</button>
+  </form>
+<% } %>

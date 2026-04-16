@@ -1,0 +1,27 @@
+<h2>New support ticket</h2>
+<form method="post" action="/support/new" enctype="multipart/form-data">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+  <div class="form-row">
+    <label>Subject</label>
+    <input type="text" name="subject" required />
+  </div>
+  <div class="form-row">
+    <label>Category</label>
+    <select name="category">
+      <option>Workspace Issue</option>
+      <option>Billing Query</option>
+      <option>Service Request Query</option>
+      <option>General Enquiry</option>
+      <option>Other</option>
+    </select>
+  </div>
+  <div class="form-row">
+    <label>Description</label>
+    <textarea name="description" required></textarea>
+  </div>
+  <div class="form-row">
+    <label>Attachment (optional)</label>
+    <input type="file" name="attachment" accept=".pdf,.jpg,.jpeg,.png,.docx" />
+  </div>
+  <button type="submit" class="btn btn-primary">Submit</button>
+</form>

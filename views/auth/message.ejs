@@ -1,0 +1,5 @@
+<h2 style="margin-top:0;"><%= title %></h2>
+<p><%= message %></p>
+<% if (typeof link !== 'undefined' && link) { %>
+  <p><a class="btn btn-primary" href="<%= link %>"><%= linkLabel || 'Continue' %></a></p>
+<% } %>

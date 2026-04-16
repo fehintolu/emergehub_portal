@@ -1,0 +1,21 @@
+<h2>Create invoice</h2>
+<form method="post" action="/admin/invoices/new">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+  <div class="form-row">
+    <label>Member</label>
+    <select name="member_id" required>
+      <% members.forEach(function (m) { %>
+        <option value="<%= m.id %>"><%= m.full_name %> (<%= m.email %>)</option>
+      <% }); %>
+    </select>
+  </div>
+  <div class="form-row"><label>Due in days</label><input type="number" name="due_days" value="7" min="1" /></div>
+  <div class="form-row"><label>Notes</label><textarea name="notes"></textarea></div>
+  <% for (var i = 0; i < 6; i++) { %>
+    <div class="form-row" style="display:flex;gap:0.5rem;align-items:flex-end;">
+      <div style="flex:1;"><label>Line <%= i+1 %> description</label><input type="text" name="line_desc" /></div>
+      <div style="width:140px;"><label>Amount (NGN)</label><input type="number" step="0.01" name="line_amount" /></div>
+    </div>
+  <% } %>
+  <button type="submit" class="btn btn-primary">Create & notify</button>
+</form>

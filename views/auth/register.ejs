@@ -1,0 +1,27 @@
+<h2 style="margin-top:0;">Create member account</h2>
+<% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
+<form method="post" action="/auth/register">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+  <div class="form-row">
+    <label for="full_name">Full name</label>
+    <input id="full_name" name="full_name" type="text" required value="<%= values.full_name || '' %>" />
+  </div>
+  <div class="form-row">
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" required value="<%= values.email || '' %>" />
+  </div>
+  <div class="form-row">
+    <label for="phone">Phone</label>
+    <input id="phone" name="phone" type="tel" required value="<%= values.phone || '' %>" />
+  </div>
+  <div class="form-row">
+    <label for="business_name">Business name (optional)</label>
+    <input id="business_name" name="business_name" type="text" value="<%= values.business_name || '' %>" />
+  </div>
+  <div class="form-row">
+    <label for="password">Password (min 8 characters)</label>
+    <input id="password" name="password" type="password" required minlength="8" autocomplete="new-password" />
+  </div>
+  <button type="submit" class="btn btn-primary">Register</button>
+</form>
+<p><a href="/auth/login">Already have an account?</a></p>

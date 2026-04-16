@@ -1,0 +1,936 @@
+const express = require('express');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs').promises;
+const crypto = require('crypto');
+const { pool } = require('../lib/db');
+const { requireValidCsrf } = require('../lib/csrf');
+const { requireMember, requireVerifiedEmail } = require('../middleware/memberAuth');
+const { trackMemberSession } = require('../middleware/trackMemberSession');
+const { dashboardStats } = require('../lib/memberStats');
+const { recentActivityForMember } = require('../lib/activity');
+const { formatNgn, formatDate, formatDateTime } = require('../lib/format');
+const { nextInvoiceNumber } = require('../lib/invoiceNumber');
+const { initializeTransaction } = require('../lib/paystack');
+const { paystackKeys } = require('../lib/portalSettings');
+const { validateUploadedFile } = require('../lib/uploadGuard');
+const {
+  notifyMember,
+  unreadCount,
+  recentForMember,
+  markAllRead,
+  markRead,
+} = require('../lib/notifications');
+const { logActivity } = require('../lib/activity');
+const { getSetting } = require('../lib/portalSettings');
+
+const router = express.Router();
+router.use(requireMember, requireVerifiedEmail, trackMemberSession);
+
+const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, '../data/uploads');
+const maxMb = Number(process.env.MAX_UPLOAD_MB) || 10;
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage,
+  limits: { fileSize: maxMb * 1024 * 1024 },
+});
+
+async function ensureUploadRoot() {
+  await fs.mkdir(uploadDir, { recursive: true });
+}
+
+router.get('/dashboard', async (req, res) => {
+  const m = res.locals.currentMember;
+  const stats = await dashboardStats(m.id);
+  const activity = await recentActivityForMember(m.id, 10);
+  const notifCount = await unreadCount(m.id);
+  const svcHistory = await pool.query(
+    `SELECT COUNT(*)::int AS c FROM service_requests WHERE member_id = $1 AND deleted_at IS NULL`,
+    [m.id]
+  );
+  const showOnboarding =
+    !stats.hasActivePlan && svcHistory.rows[0].c === 0;
+  res.render('member/dashboard', {
+    layout: 'layouts/member',
+    title: 'Dashboard',
+    stats,
+    activity,
+    notifCount,
+    showOnboarding,
+    formatDateTime,
+    formatNgn,
+  });
+});
+
+router.get('/workspace', async (req, res) => {
+  const m = res.locals.currentMember;
+  const plan = await pool.query(
+    `SELECT mp.*, mt.name, mt.description, mt.price_display, mt.hours
+     FROM member_plans mp
+     JOIN membership_tiers mt ON mt.id = mp.tier_id
+     WHERE mp.member_id = $1 AND mp.deleted_at IS NULL AND mp.status = 'active'
+     ORDER BY mp.started_at DESC LIMIT 1`,
+    [m.id]
+  );
+  const tiers = await pool.query(
+    `SELECT * FROM membership_tiers ORDER BY sort_order ASC`
+  );
+  const roomsJson = await getSetting('meeting_room_names', '[]');
+  let roomNames = [];
+  try {
+    roomNames = JSON.parse(roomsJson) || [];
+  } catch {
+    roomNames = [];
+  }
+  const bookingsUp = await pool.query(
+    `SELECT * FROM meeting_room_bookings
+     WHERE member_id = $1 AND deleted_at IS NULL AND starts_at >= now()
+     ORDER BY starts_at ASC LIMIT 50`,
+    [m.id]
+  );
+  const bookingsPast = await pool.query(
+    `SELECT * FROM meeting_room_bookings
+     WHERE member_id = $1 AND deleted_at IS NULL AND starts_at < now()
+     ORDER BY starts_at DESC LIMIT 30`,
+    [m.id]
+  );
+  const notifCount = await unreadCount(m.id);
+  res.render('member/workspace', {
+    layout: 'layouts/member',
+    title: 'My workspace',
+    plan: plan.rows[0] || null,
+    tiers: tiers.rows,
+    roomNames,
+    bookingsUp: bookingsUp.rows,
+    bookingsPast: bookingsPast.rows,
+    formatDate,
+    formatDateTime,
+    notifCount,
+    query: req.query,
+  });
+});
+
+router.post('/workspace/plan-request', requireValidCsrf, async (req, res) => {
+  const m = res.locals.currentMember;
+  const tierId = Number(req.body.tier_id);
+  const note = String(req.body.note || '').trim();
+  await pool.query(
+    `INSERT INTO member_plan_history (member_id, tier_id, status, note, started_at)
+     VALUES ($1, $2, 'requested', $3, CURRENT_DATE)`,
+    [m.id, tierId, note || null]
+  );
+  await logActivity({
+    memberId: m.id,
+    eventType: 'plan',
+    title: 'Plan change requested',
+    body: note,
+    entityType: 'tier',
+    entityId: null,
+  });
+  res.redirect('/workspace?msg=plan');
+});
+
+router.post('/workspace/book-room', requireValidCsrf, async (req, res) => {
+  const m = res.locals.currentMember;
+  const room_name = String(req.body.room_name || '');
+  const starts_at = new Date(req.body.starts_at || '');
+  const durationMin = Number(req.body.duration_minutes || 60);
+  const purpose = String(req.body.purpose || '').trim();
+  if (!room_name || Number.isNaN(starts_at.getTime())) {
+    return res.redirect('/workspace?err=booking');
+  }
+  const ends_at = new Date(starts_at.getTime() + durationMin * 60 * 1000);
+  await pool.query(
+    `INSERT INTO meeting_room_bookings (member_id, room_name, starts_at, ends_at, purpose, status)
+     VALUES ($1, $2, $3, $4, $5, 'pending')`,
+    [m.id, room_name, starts_at, ends_at, purpose || null]
+  );
+  res.redirect('/workspace?msg=booked');
+});
+
+router.get('/services', async (req, res) => {
+  const m = res.locals.currentMember;
+  const tab = req.query.tab === 'request' ? 'request' : 'mine';
+  const cats = await pool.query(
+    `SELECT * FROM service_categories ORDER BY sort_order`
+  );
+  const services = await pool.query(
+    `SELECT s.*, c.name AS category_name, c.slug AS category_slug
+     FROM services s
+     JOIN service_categories c ON c.id = s.category_id
+     ORDER BY c.sort_order, s.sort_order`
+  );
+  const mine = await pool.query(
+    `SELECT sr.*, sv.name AS service_name, c.name AS category_name
+     FROM service_requests sr
+     JOIN services sv ON sv.id = sr.service_id
+     JOIN service_categories c ON c.id = sv.category_id
+     WHERE sr.member_id = $1 AND sr.deleted_at IS NULL
+     ORDER BY sr.created_at DESC`,
+    [m.id]
+  );
+  const notifCount = await unreadCount(m.id);
+  res.render('member/services', {
+    layout: 'layouts/member',
+    title: 'Services',
+    tab,
+    cats: cats.rows,
+    services: services.rows,
+    mine: mine.rows,
+    formatDateTime,
+    notifCount,
+  });
+});
+
+router.get('/services/request/:serviceId', async (req, res) => {
+  const m = res.locals.currentMember;
+  const sid = Number(req.params.serviceId);
+  const { rows } = await pool.query(
+    `SELECT s.*, c.name AS category_name FROM services s
+     JOIN service_categories c ON c.id = s.category_id WHERE s.id = $1`,
+    [sid]
+  );
+  if (!rows[0]) return res.status(404).send('Not found');
+  if (!m.business_name) {
+    return res.render('member/service-request-blocked', {
+      layout: 'layouts/member',
+      title: 'Business details required',
+      service: rows[0],
+      notifCount: await unreadCount(m.id),
+    });
+  }
+  res.render('member/service-request-form', {
+    layout: 'layouts/member',
+    title: 'Request service',
+    service: rows[0],
+    notifCount: await unreadCount(m.id),
+    query: req.query,
+  });
+});
+
+router.post(
+  '/services/request/:serviceId',
+  upload.single('attachment'),
+  requireValidCsrf,
+  async (req, res) => {
+    const m = res.locals.currentMember;
+    const sid = Number(req.params.serviceId);
+    const description = String(req.body.description || '').trim();
+    if (!description) return res.redirect(`/services/request/${sid}?err=1`);
+    let docId = null;
+    if (req.file && req.file.buffer) {
+      const v = validateUploadedFile({
+        buffer: req.file.buffer,
+        reportedMime: req.file.mimetype,
+      });
+      if (!v.ok) return res.redirect(`/services/request/${sid}?err=upload`);
+      await ensureUploadRoot();
+      const memberDir = path.join(uploadDir, String(m.id));
+      await fs.mkdir(memberDir, { recursive: true });
+      const ext = path.extname(req.file.originalname || '') || '.bin';
+      const fname = `${crypto.randomUUID()}${ext}`;
+      const storagePath = path.join(memberDir, fname);
+      await fs.writeFile(storagePath, req.file.buffer);
+      const ins = await pool.query(
+        `INSERT INTO member_documents (member_id, uploaded_by_type, uploaded_by_member_id, original_name, storage_path, mime_type, size_bytes, category)
+         VALUES ($1, 'member', $1, $2, $3, $4, $5, 'service_request')
+         RETURNING id`,
+        [
+          m.id,
+          req.file.originalname || 'file',
+          storagePath,
+          v.mime,
+          req.file.size,
+        ]
+      );
+      docId = ins.rows[0].id;
+    }
+    const detail = {
+      extra: String(req.body.extra_details || '').trim(),
+    };
+    const { rows: sv } = await pool.query(
+      'SELECT name FROM services WHERE id = $1',
+      [sid]
+    );
+    const insR = await pool.query(
+      `INSERT INTO service_requests (member_id, service_id, title, description, detail_json, status)
+       VALUES ($1, $2, $3, $4, $5::jsonb, 'Submitted')
+       RETURNING id`,
+      [
+        m.id,
+        sid,
+        sv[0]?.name || 'Service',
+        description,
+        JSON.stringify(detail),
+      ]
+    );
+    const rid = insR.rows[0].id;
+    if (docId) {
+      await pool.query(
+        `UPDATE member_documents SET service_request_id = $2 WHERE id = $1`,
+        [docId, rid]
+      );
+    }
+    await pool.query(
+      `INSERT INTO service_request_updates (service_request_id, stage, note, visible_to_member)
+       VALUES ($1, 'Submitted', 'Request received.', true)`,
+      [rid]
+    );
+    await logActivity({
+      memberId: m.id,
+      eventType: 'service',
+      title: 'Service request submitted',
+      body: sv[0]?.name,
+      entityType: 'service_request',
+      entityId: rid,
+    });
+    res.redirect(`/services/${rid}`);
+  }
+);
+
+router.get('/services/:id', async (req, res) => {
+  const m = res.locals.currentMember;
+  const id = req.params.id;
+  const { rows } = await pool.query(
+    `SELECT sr.*, sv.name AS service_name, c.name AS category_name
+     FROM service_requests sr
+     JOIN services sv ON sv.id = sr.service_id
+     JOIN service_categories c ON c.id = sv.category_id
+     WHERE sr.id = $1 AND sr.member_id = $2 AND sr.deleted_at IS NULL`,
+    [id, m.id]
+  );
+  if (!rows[0]) return res.status(404).send('Not found');
+  const sr = rows[0];
+  const updates = await pool.query(
+    `SELECT * FROM service_request_updates
+     WHERE service_request_id = $1 AND deleted_at IS NULL AND visible_to_member = true
+     ORDER BY created_at ASC`,
+    [id]
+  );
+  const msgs = await pool.query(
+    `SELECT * FROM service_request_messages
+     WHERE service_request_id = $1 AND deleted_at IS NULL
+     ORDER BY created_at ASC`,
+    [id]
+  );
+  const docs = await pool.query(
+    `SELECT * FROM member_documents
+     WHERE service_request_id = $1 AND deleted_at IS NULL`,
+    [id]
+  );
+  const notifCount = await unreadCount(m.id);
+  res.render('member/service-detail', {
+    layout: 'layouts/member',
+    title: sr.service_name,
+    sr,
+    updates: updates.rows,
+    msgs: msgs.rows,
+    docs: docs.rows,
+    formatDateTime,
+    notifCount,
+  });
+});
+
+router.post('/services/:id/message', requireValidCsrf, async (req, res) => {
+  const m = res.locals.currentMember;
+  const id = req.params.id;
+  const body = String(req.body.body || '').trim();
+  const chk = await pool.query(
+    `SELECT id FROM service_requests WHERE id = $1 AND member_id = $2 AND deleted_at IS NULL`,
+    [id, m.id]
+  );
+  if (!chk.rows[0] || !body) return res.redirect(`/services/${id}`);
+  await pool.query(
+    `INSERT INTO service_request_messages (service_request_id, sender_type, member_id, body)
+     VALUES ($1, 'member', $2, $3)`,
+    [id, m.id, body]
+  );
+  res.redirect(`/services/${id}`);
+});
+
+router.get('/billing', async (req, res) => {
+  const m = res.locals.currentMember;
+  const today = new Date().toISOString().slice(0, 10);
+  await pool.query(
+    `UPDATE invoices SET status = 'overdue', updated_at = now()
+     WHERE member_id = $1 AND status IN ('unpaid','sent') AND due_date < $2::date AND deleted_at IS NULL`,
+    [m.id, today]
+  );
+  const outstanding = await pool.query(
+    `SELECT * FROM invoices
+     WHERE member_id = $1 AND deleted_at IS NULL AND status IN ('unpaid','sent','overdue','awaiting_confirmation')
+     ORDER BY due_date ASC`,
+    [m.id]
+  );
+  const history = await pool.query(
+    `SELECT p.*, i.invoice_number, i.notes
+     FROM payments p
+     JOIN invoices i ON i.id = p.invoice_id
+     WHERE p.member_id = $1 AND p.deleted_at IS NULL
+     ORDER BY p.created_at DESC LIMIT 100`,
+    [m.id]
+  );
+  const bankName = await getSetting('bank_name');
+  const accountName = await getSetting('account_name');
+  const accountNumber = await getSetting('account_number');
+  const { publicKey } = await paystackKeys();
+  const notifCount = await unreadCount(m.id);
+  res.render('member/billing', {
+    layout: 'layouts/member',
+    title: 'Payments & billing',
+    outstanding: outstanding.rows,
+    history: history.rows,
+    formatNgn,
+    formatDate,
+    bankName,
+    accountName,
+    accountNumber,
+    paystackPublicKey: publicKey,
+    memberEmail: m.email,
+    baseUrl: process.env.BASE_URL || '',
+    notifCount,
+  });
+});
+
+router.post('/billing/pay/init', requireValidCsrf, async (req, res) => {
+  const m = res.locals.currentMember;
+  const invoiceId = req.body.invoice_id;
+  const { rows } = await pool.query(
+    `SELECT * FROM invoices WHERE id = $1 AND member_id = $2 AND deleted_at IS NULL`,
+    [invoiceId, m.id]
+  );
+  const inv = rows[0];
+  if (!inv || !['unpaid', 'sent', 'overdue'].includes(inv.status)) {
+    return res.status(400).json({ error: 'Invalid invoice' });
+  }
+  const ref = `PH-${crypto.randomBytes(12).toString('hex')}`;
+  const ins = await pool.query(
+    `INSERT INTO payments (invoice_id, member_id, amount_cents, method, status, paystack_reference)
+     VALUES ($1, $2, $3, 'paystack', 'pending', $4)
+     RETURNING id`,
+    [inv.id, m.id, inv.total_cents, ref]
+  );
+  try {
+    const data = await initializeTransaction({
+      email: m.email,
+      amountCents: inv.total_cents,
+      reference: ref,
+      callbackUrl: `${process.env.BASE_URL || ''}/billing`,
+      metadata: { invoice_id: inv.id, payment_id: ins.rows[0].id },
+    });
+    await pool.query(
+      `UPDATE payments SET paystack_access_code = $2 WHERE id = $1`,
+      [ins.rows[0].id, data.access_code]
+    );
+    const { publicKey } = await paystackKeys();
+    return res.json({
+      access_code: data.access_code,
+      publicKey,
+      reference: ref,
+    });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: e.message || 'Paystack error' });
+  }
+});
+
+router.post('/billing/manual', upload.single('proof'), requireValidCsrf, async (req, res) => {
+  const m = res.locals.currentMember;
+  const invoiceId = req.body.invoice_id;
+  const { rows } = await pool.query(
+    `SELECT * FROM invoices WHERE id = $1 AND member_id = $2 AND deleted_at IS NULL`,
+    [invoiceId, m.id]
+  );
+  const inv = rows[0];
+  if (!inv || !['unpaid', 'sent', 'overdue'].includes(inv.status)) {
+    return res.redirect('/billing?err=inv');
+  }
+  if (!req.file || !req.file.buffer) {
+    return res.redirect('/billing?err=proof');
+  }
+  const v = validateUploadedFile({
+    buffer: req.file.buffer,
+    reportedMime: req.file.mimetype,
+  });
+  if (!v.ok) return res.redirect('/billing?err=type');
+  await ensureUploadRoot();
+  const memberDir = path.join(uploadDir, String(m.id));
+  await fs.mkdir(memberDir, { recursive: true });
+  const fname = `${crypto.randomUUID()}${path.extname(req.file.originalname || '') || '.pdf'}`;
+  const storagePath = path.join(memberDir, fname);
+  await fs.writeFile(storagePath, req.file.buffer);
+  const doc = await pool.query(
+    `INSERT INTO member_documents (member_id, uploaded_by_type, uploaded_by_member_id, original_name, storage_path, mime_type, size_bytes, category)
+     VALUES ($1, 'member', $1, $2, $3, $4, $5, 'payment_proof')
+     RETURNING id`,
+    [
+      m.id,
+      req.file.originalname || 'proof',
+      storagePath,
+      v.mime,
+      req.file.size,
+    ]
+  );
+  await pool.query(
+    `UPDATE invoices SET status = 'awaiting_confirmation', bank_proof_document_id = $2, updated_at = now()
+     WHERE id = $1`,
+    [inv.id, doc.rows[0].id]
+  );
+  await notifyMember({
+    memberId: m.id,
+    title: 'Bank transfer submitted',
+    message: 'We will confirm your payment shortly.',
+    linkUrl: '/billing',
+  });
+  res.redirect('/billing?msg=manual');
+});
+
+router.get('/billing/receipt/:paymentId', async (req, res) => {
+  const m = res.locals.currentMember;
+  const { rows } = await pool.query(
+    `SELECT p.*, i.invoice_number, i.due_date
+     FROM payments p
+     JOIN invoices i ON i.id = p.invoice_id
+     WHERE p.id = $1 AND p.member_id = $2 AND p.status = 'completed'`,
+    [req.params.paymentId, m.id]
+  );
+  if (!rows[0]) return res.status(404).send('Not found');
+  res.render('member/receipt', {
+    layout: false,
+    p: rows[0],
+    formatNgn,
+    formatDateTime,
+  });
+});
+
+router.get('/documents', async (req, res) => {
+  const m = res.locals.currentMember;
+  const shared = await pool.query(
+    `SELECT * FROM member_documents
+     WHERE member_id = $1 AND is_admin_shared = true AND deleted_at IS NULL
+     ORDER BY created_at DESC`,
+    [m.id]
+  );
+  const mine = await pool.query(
+    `SELECT * FROM member_documents
+     WHERE member_id = $1 AND uploaded_by_type = 'member' AND deleted_at IS NULL
+     ORDER BY created_at DESC`,
+    [m.id]
+  );
+  const notifCount = await unreadCount(m.id);
+  res.render('member/documents', {
+    layout: 'layouts/member',
+    title: 'Documents',
+    shared: shared.rows,
+    mine: mine.rows,
+    formatDateTime,
+    notifCount,
+    query: req.query,
+  });
+});
+
+router.post('/documents/upload', upload.single('file'), requireValidCsrf, async (req, res) => {
+  const m = res.locals.currentMember;
+  if (!req.file || !req.file.buffer) return res.redirect('/documents?err=file');
+  const v = validateUploadedFile({
+    buffer: req.file.buffer,
+    reportedMime: req.file.mimetype,
+  });
+  if (!v.ok) return res.redirect('/documents?err=type');
+  await ensureUploadRoot();
+  const memberDir = path.join(uploadDir, String(m.id));
+  await fs.mkdir(memberDir, { recursive: true });
+  const fname = `${crypto.randomUUID()}${path.extname(req.file.originalname || '') || '.bin'}`;
+  const storagePath = path.join(memberDir, fname);
+  await fs.writeFile(storagePath, req.file.buffer);
+  await pool.query(
+    `INSERT INTO member_documents (member_id, uploaded_by_type, uploaded_by_member_id, original_name, storage_path, mime_type, size_bytes, category, is_admin_shared)
+     VALUES ($1, 'member', $1, $2, $3, $4, $5, 'member_upload', false)`,
+    [
+      m.id,
+      req.file.originalname || 'file',
+      storagePath,
+      v.mime,
+      req.file.size,
+    ]
+  );
+  await logActivity({
+    memberId: m.id,
+    eventType: 'document',
+    title: 'Document uploaded',
+    body: req.file.originalname,
+    entityType: 'document',
+    entityId: null,
+  });
+  res.redirect('/documents?msg=ok');
+});
+
+router.get('/documents/download/:id', async (req, res) => {
+  const m = res.locals.currentMember;
+  const { rows } = await pool.query(
+    `SELECT * FROM member_documents WHERE id = $1 AND member_id = $2 AND deleted_at IS NULL`,
+    [req.params.id, m.id]
+  );
+  const d = rows[0];
+  if (!d) return res.status(404).send('Not found');
+  try {
+    const buf = await fs.readFile(d.storage_path);
+    res.setHeader('Content-Type', d.mime_type);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${encodeURIComponent(d.original_name)}"`
+    );
+    res.send(buf);
+  } catch {
+    res.status(404).send('Missing file');
+  }
+});
+
+router.get('/support', async (req, res) => {
+  const m = res.locals.currentMember;
+  const { rows } = await pool.query(
+    `SELECT * FROM support_tickets WHERE member_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC`,
+    [m.id]
+  );
+  const notifCount = await unreadCount(m.id);
+  res.render('member/support-list', {
+    layout: 'layouts/member',
+    title: 'Support',
+    tickets: rows,
+    formatDateTime,
+    notifCount,
+  });
+});
+
+router.get('/support/new', async (req, res) => {
+  const m = res.locals.currentMember;
+  res.render('member/support-new', {
+    layout: 'layouts/member',
+    title: 'New ticket',
+    notifCount: await unreadCount(m.id),
+  });
+});
+
+router.post(
+  '/support/new',
+  upload.single('attachment'),
+  requireValidCsrf,
+  async (req, res) => {
+    const m = res.locals.currentMember;
+    const subject = String(req.body.subject || '').trim();
+    const category = String(req.body.category || 'General Enquiry');
+    const description = String(req.body.description || '').trim();
+    if (!subject || !description) return res.redirect('/support/new?err=1');
+    const ins = await pool.query(
+      `INSERT INTO support_tickets (member_id, subject, category, status)
+       VALUES ($1, $2, $3, 'Open')
+       RETURNING id`,
+      [m.id, subject, category]
+    );
+    const tid = ins.rows[0].id;
+    let attId = null;
+    if (req.file && req.file.buffer) {
+      const v = validateUploadedFile({
+        buffer: req.file.buffer,
+        reportedMime: req.file.mimetype,
+      });
+      if (v.ok) {
+        await ensureUploadRoot();
+        const memberDir = path.join(uploadDir, String(m.id));
+        await fs.mkdir(memberDir, { recursive: true });
+        const fname = `${crypto.randomUUID()}${path.extname(req.file.originalname || '') || '.bin'}`;
+        const storagePath = path.join(memberDir, fname);
+        await fs.writeFile(storagePath, req.file.buffer);
+        const doc = await pool.query(
+          `INSERT INTO member_documents (member_id, uploaded_by_type, uploaded_by_member_id, original_name, storage_path, mime_type, size_bytes, category, support_ticket_id)
+           VALUES ($1, 'member', $1, $2, $3, $4, $5, 'support', $6)
+           RETURNING id`,
+          [
+            m.id,
+            req.file.originalname || 'file',
+            storagePath,
+            v.mime,
+            req.file.size,
+            tid,
+          ]
+        );
+        attId = doc.rows[0].id;
+      }
+    }
+    await pool.query(
+      `INSERT INTO support_messages (ticket_id, sender_type, member_id, body, attachment_document_id)
+       VALUES ($1, 'member', $2, $3, $4)`,
+      [tid, m.id, description, attId]
+    );
+    res.redirect(`/support/${tid}`);
+  }
+);
+
+router.get('/support/:id', async (req, res) => {
+  const m = res.locals.currentMember;
+  const { rows } = await pool.query(
+    `SELECT * FROM support_tickets WHERE id = $1 AND member_id = $2 AND deleted_at IS NULL`,
+    [req.params.id, m.id]
+  );
+  if (!rows[0]) return res.status(404).send('Not found');
+  const msgs = await pool.query(
+    `SELECT sm.*, md.original_name AS attach_name
+     FROM support_messages sm
+     LEFT JOIN member_documents md ON md.id = sm.attachment_document_id
+     WHERE sm.ticket_id = $1 AND sm.deleted_at IS NULL AND sm.internal_note = false
+     ORDER BY sm.created_at ASC`,
+    [req.params.id]
+  );
+  let canReopenTicket = false;
+  const t0 = rows[0];
+  if (t0.status === 'Resolved' && t0.last_member_reopen_deadline) {
+    canReopenTicket = new Date(t0.last_member_reopen_deadline) > new Date();
+  }
+  res.render('member/support-detail', {
+    layout: 'layouts/member',
+    title: rows[0].subject,
+    ticket: rows[0],
+    msgs: msgs.rows,
+    formatDateTime,
+    notifCount: await unreadCount(m.id),
+    canReopenTicket,
+  });
+});
+
+router.post('/support/:id/reply', upload.single('attachment'), requireValidCsrf, async (req, res) => {
+  const m = res.locals.currentMember;
+  const tid = req.params.id;
+  const body = String(req.body.body || '').trim();
+  const chk = await pool.query(
+    `SELECT * FROM support_tickets WHERE id = $1 AND member_id = $2 AND deleted_at IS NULL`,
+    [tid, m.id]
+  );
+  if (!chk.rows[0]) return res.status(404).send('Not found');
+  if (!body) return res.redirect(`/support/${tid}`);
+  let attId = null;
+  if (req.file && req.file.buffer) {
+    const v = validateUploadedFile({
+      buffer: req.file.buffer,
+      reportedMime: req.file.mimetype,
+    });
+    if (v.ok) {
+      await ensureUploadRoot();
+      const memberDir = path.join(uploadDir, String(m.id));
+      await fs.mkdir(memberDir, { recursive: true });
+      const fname = `${crypto.randomUUID()}${path.extname(req.file.originalname || '') || '.bin'}`;
+      const storagePath = path.join(memberDir, fname);
+      await fs.writeFile(storagePath, req.file.buffer);
+      const doc = await pool.query(
+        `INSERT INTO member_documents (member_id, uploaded_by_type, uploaded_by_member_id, original_name, storage_path, mime_type, size_bytes, category, support_ticket_id)
+         VALUES ($1, 'member', $1, $2, $3, $4, $5, 'support', $6)
+         RETURNING id`,
+        [m.id, req.file.originalname || 'file', storagePath, v.mime, req.file.size, tid]
+      );
+      attId = doc.rows[0].id;
+    }
+  }
+  await pool.query(
+    `INSERT INTO support_messages (ticket_id, sender_type, member_id, body, attachment_document_id)
+     VALUES ($1, 'member', $2, $3, $4)`,
+    [tid, m.id, body, attId]
+  );
+  await pool.query(
+    `UPDATE support_tickets SET status = 'Open', updated_at = now() WHERE id = $1 AND status != 'Closed'`,
+    [tid]
+  );
+  res.redirect(`/support/${tid}`);
+});
+
+router.post('/support/:id/reopen', requireValidCsrf, async (req, res) => {
+  const m = res.locals.currentMember;
+  const tid = req.params.id;
+  const { rows } = await pool.query(
+    `SELECT * FROM support_tickets WHERE id = $1 AND member_id = $2 AND deleted_at IS NULL`,
+    [tid, m.id]
+  );
+  const t = rows[0];
+  if (!t || t.status !== 'Resolved') return res.redirect(`/support/${tid}`);
+  if (!t.last_member_reopen_deadline || new Date(t.last_member_reopen_deadline) < new Date()) {
+    return res.redirect(`/support/${tid}?err=reopen`);
+  }
+  await pool.query(
+    `UPDATE support_tickets SET status = 'Open', resolved_at = NULL, last_member_reopen_deadline = NULL, updated_at = now() WHERE id = $1`,
+    [tid]
+  );
+  res.redirect(`/support/${tid}`);
+});
+
+router.get('/settings', async (req, res) => {
+  const m = res.locals.currentMember;
+  res.redirect('/settings/profile');
+});
+
+router.get('/settings/:tab', async (req, res) => {
+  const m = res.locals.currentMember;
+  const tab = req.params.tab;
+  if (!['profile', 'business', 'notifications', 'security'].includes(tab)) {
+    return res.redirect('/settings/profile');
+  }
+  const sessions = await pool.query(
+    `SELECT * FROM member_tracked_sessions WHERE member_id = $1 ORDER BY last_seen_at DESC`,
+    [m.id]
+  );
+  res.render('member/settings', {
+    layout: 'layouts/member',
+    title: 'Settings',
+    tab,
+    sessions: sessions.rows,
+    formatDateTime,
+    notifCount: await unreadCount(m.id),
+    currentMember: m,
+  });
+});
+
+router.post('/settings/profile', requireValidCsrf, upload.single('photo'), async (req, res) => {
+  const m = res.locals.currentMember;
+  const full_name = String(req.body.full_name || '').trim();
+  const phone = String(req.body.phone || '').trim();
+  let email = String(req.body.email || '')
+    .trim()
+    .toLowerCase();
+  const emailChanged = email !== m.email;
+  if (emailChanged) {
+    const token = crypto.randomBytes(32).toString('hex');
+    const expires = new Date(Date.now() + 48 * 3600 * 1000);
+    await pool.query(
+      `UPDATE members SET full_name = $2, phone = $3, email = $4,
+       email_verified_at = NULL, email_verification_token = $5, email_verification_expires = $6, updated_at = now()
+       WHERE id = $1`,
+      [m.id, full_name, phone, email, token, expires]
+    );
+    const { sendVerificationEmail } = require('../lib/mail');
+    const base = process.env.BASE_URL || '';
+    await sendVerificationEmail({
+      to: email,
+      name: full_name,
+      verifyUrl: `${base}/auth/verify?token=${encodeURIComponent(token)}`,
+    });
+  } else {
+    await pool.query(
+      `UPDATE members SET full_name = $2, phone = $3, updated_at = now() WHERE id = $1`,
+      [m.id, full_name, phone]
+    );
+  }
+  if (req.file && req.file.buffer) {
+    const v = validateUploadedFile({
+      buffer: req.file.buffer,
+      reportedMime: req.file.mimetype,
+    });
+    if (v.ok && (v.mime === 'image/jpeg' || v.mime === 'image/png')) {
+      await ensureUploadRoot();
+      const memberDir = path.join(uploadDir, String(m.id));
+      await fs.mkdir(memberDir, { recursive: true });
+      const fname = `avatar-${crypto.randomUUID()}${path.extname(req.file.originalname || '') || '.jpg'}`;
+      const storagePath = path.join(memberDir, fname);
+      await fs.writeFile(storagePath, req.file.buffer);
+      await pool.query(
+        `UPDATE members SET profile_photo_path = $2 WHERE id = $1`,
+        [m.id, storagePath]
+      );
+    }
+  }
+  res.redirect('/settings/profile?msg=1');
+});
+
+router.post('/settings/business', requireValidCsrf, async (req, res) => {
+  const m = res.locals.currentMember;
+  await pool.query(
+    `UPDATE members SET business_name = $2, business_type = $3, cac_number = $4, industry = $5, website = $6, updated_at = now()
+     WHERE id = $1`,
+    [
+      m.id,
+      String(req.body.business_name || '').trim() || null,
+      String(req.body.business_type || '').trim() || null,
+      String(req.body.cac_number || '').trim() || null,
+      String(req.body.industry || '').trim() || null,
+      String(req.body.website || '').trim() || null,
+    ]
+  );
+  res.redirect('/settings/business?msg=1');
+});
+
+router.post('/settings/notifications', requireValidCsrf, async (req, res) => {
+  const m = res.locals.currentMember;
+  const on = (name) => req.body[name] === '1' || req.body[name] === 'on';
+  await pool.query(
+    `UPDATE members SET
+     notify_email_invoice = $2, notify_email_service = $3, notify_email_support = $4,
+     notify_email_announcements = $5, notify_sms = $6, updated_at = now()
+     WHERE id = $1`,
+    [
+      m.id,
+      on('notify_email_invoice'),
+      on('notify_email_service'),
+      on('notify_email_support'),
+      on('notify_email_announcements'),
+      on('notify_sms'),
+    ]
+  );
+  res.redirect('/settings/notifications?msg=1');
+});
+
+router.post('/settings/password', requireValidCsrf, async (req, res) => {
+  const m = res.locals.currentMember;
+  const bcrypt = require('bcryptjs');
+  const oldp = String(req.body.current_password || '');
+  const p1 = String(req.body.password || '');
+  const p2 = String(req.body.password2 || '');
+  if (!(await bcrypt.compare(oldp, m.password_hash))) {
+    return res.redirect('/settings/security?err=old');
+  }
+  if (p1.length < 8 || p1 !== p2) {
+    return res.redirect('/settings/security?err=pw');
+  }
+  const hash = await bcrypt.hash(p1, 10);
+  await pool.query(
+    `UPDATE members SET password_hash = $2, updated_at = now() WHERE id = $1`,
+    [m.id, hash]
+  );
+  res.redirect('/settings/security?msg=1');
+});
+
+router.post('/settings/session-revoke', requireValidCsrf, async (req, res) => {
+  const m = res.locals.currentMember;
+  const sid = String(req.body.session_sid || '');
+  if (sid === req.sessionID) {
+    return res.redirect('/settings/security?err=self');
+  }
+  await pool.query(
+    `DELETE FROM member_sessions WHERE sid = $1`,
+    [sid]
+  );
+  await pool.query(
+    `DELETE FROM member_tracked_sessions WHERE session_sid = $1 AND member_id = $2`,
+    [sid, m.id]
+  );
+  res.redirect('/settings/security?msg=revoked');
+});
+
+router.get('/notifications', async (req, res) => {
+  const m = res.locals.currentMember;
+  const rows = await recentForMember(m.id, 50);
+  res.render('member/notifications', {
+    layout: 'layouts/member',
+    title: 'Notifications',
+    rows,
+    formatDateTime,
+    notifCount: await unreadCount(m.id),
+  });
+});
+
+router.post('/notifications/mark-all', requireValidCsrf, async (req, res) => {
+  await markAllRead(res.locals.currentMember.id);
+  res.redirect(req.get('referer') || '/dashboard');
+});
+
+router.post('/notifications/:id/read', requireValidCsrf, async (req, res) => {
+  await markRead(res.locals.currentMember.id, req.params.id);
+  res.redirect(req.get('referer') || '/notifications');
+});
+
+module.exports = router;

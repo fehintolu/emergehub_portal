@@ -1,0 +1,20 @@
+<form method="post" action="/notifications/mark-all" style="margin-bottom:1rem;">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+  <button type="submit" class="btn btn-secondary">Mark all read</button>
+</form>
+<ul style="list-style:none;padding:0;">
+  <% rows.forEach(function (n) { %>
+    <li class="card" style="<%= n.read_at ? 'opacity:0.75' : '' %>">
+      <strong><%= n.title %></strong>
+      <p><%= n.message %></p>
+      <small><%= formatDateTime(n.created_at) %></small>
+      <% if (n.link_url) { %><p><a href="<%= n.link_url %>">Open</a></p><% } %>
+      <% if (!n.read_at) { %>
+        <form method="post" action="/notifications/<%= n.id %>/read">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+          <button type="submit" class="link-btn">Mark read</button>
+        </form>
+      <% } %>
+    </li>
+  <% }); %>
+</ul>

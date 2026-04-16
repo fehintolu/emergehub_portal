@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title><%= title %> — Portal Admin</title>
+  <link rel="stylesheet" href="/css/portal.css" />
+</head>
+<body class="portal-body">
+  <div class="portal-shell">
+    <aside class="portal-sidebar">
+      <div class="portal-brand">EmergeHub <span>Admin</span></div>
+      <nav>
+        <a href="/admin">Dashboard</a>
+        <a href="/admin/members">Members</a>
+        <a href="/admin/service-requests">Service requests</a>
+        <a href="/admin/invoices">Invoices</a>
+        <a href="/admin/rooms">Meeting rooms</a>
+        <a href="/admin/documents">Documents</a>
+        <a href="/admin/support">Support</a>
+        <a href="/admin/notifications">Notifications</a>
+        <a href="/admin/settings">Settings</a>
+      </nav>
+      <form method="post" action="/admin/logout" style="margin-top:1.5rem;padding:0 1.25rem;">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+        <button type="submit" class="link-btn" style="color:#fff;">Log out</button>
+      </form>
+    </aside>
+    <div class="portal-main">
+      <header class="portal-topbar">
+        <h1 style="margin:0;font-size:1.25rem;"><%= title %></h1>
+      </header>
+      <main class="portal-content"><%- body %></main>
+    </div>
+  </div>
+</body>
+</html>
