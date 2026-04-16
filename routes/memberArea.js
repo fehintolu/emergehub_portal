@@ -384,7 +384,6 @@ router.get('/billing', async (req, res) => {
     bankName,
     accountName,
     accountNumber,
-    memberEmail: m.email,
     baseUrl: process.env.BASE_URL || '',
     notifCount,
   });

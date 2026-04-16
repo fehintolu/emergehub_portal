@@ -40,7 +40,7 @@ cd /apps/emergehub-portal && npm run setup-db
 
    **`https://my.emergehub.com.ng/api/webhooks/paystack`**
 
-3. Card payments: server creates a transaction and returns `access_code`; the member billing page opens Paystack inline. **Always** trust payment state from the webhook after server-side verification, not the client callback alone.
+3. Card payments: server initializes a transaction and returns Paystack’s `authorization_url`; the member is redirected to Paystack Checkout, then back to the portal. **Always** trust payment state from the webhook after server-side verification, not the browser return alone.
 
 ## Default portal admin (seed)
 
