@@ -1,6 +1,10 @@
-# EmergeHub Member Portal (`emergehub-portal`)
+# EmergeHub Member Portal (`emergehub_portal`)
 
 Isolated member portal and admin application for **https://my.emergehub.com.ng**.
+
+**Source:** [github.com/fehintolu/emergehub_portal](https://github.com/fehintolu/emergehub_portal)
+
+Production deployment on this server includes **systemd**, **nginx** reverse proxy, and **Let’s Encrypt** TLS for `my.emergehub.com.ng`.
 
 ## On this server
 
