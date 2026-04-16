@@ -1,4 +1,3 @@
-<script src="https://js.paystack.co/v1/inline.js"></script>
 <h2>Outstanding invoices</h2>
 <% if (!outstanding.length) { %><p>None — you are up to date.</p><% } %>
 <% outstanding.forEach(function (inv) { %>
@@ -53,10 +52,8 @@
 
 <script>
 (function () {
-  var key = <%- JSON.stringify(paystackPublicKey || '') %>;
   document.querySelectorAll('.pay-now').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      if (!key) { alert('Paystack is not configured yet.'); return; }
       var invoiceId = btn.getAttribute('data-invoice');
       fetch('/billing/pay/init', {
         method: 'POST',
@@ -65,14 +62,11 @@
         credentials: 'same-origin'
       }).then(function (r) { return r.json(); }).then(function (data) {
         if (data.error) { alert(data.error); return; }
-        var handler = PaystackPop.setup({
-          key: data.publicKey || key,
-          email: <%- JSON.stringify(memberEmail || '') %>,
-          access_code: data.access_code,
-          callback: function () { window.location.href = '/billing?paid=1'; },
-          onClose: function () {}
-        });
-        handler.openIframe();
+        if (data.authorization_url) {
+          window.location.href = data.authorization_url;
+        } else {
+          alert('Paystack did not return a checkout URL.');
+        }
       }).catch(function () { alert('Could not start payment.'); });
     });
   });

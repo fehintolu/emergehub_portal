@@ -373,7 +373,6 @@ router.get('/billing', async (req, res) => {
   const bankName = await getSetting('bank_name');
   const accountName = await getSetting('account_name');
   const accountNumber = await getSetting('account_number');
-  const { publicKey } = await paystackKeys();
   const notifCount = await unreadCount(m.id);
   res.render('member/billing', {
     layout: 'layouts/member',
@@ -385,7 +384,6 @@ router.get('/billing', async (req, res) => {
     bankName,
     accountName,
     accountNumber,
-    paystackPublicKey: publicKey,
     memberEmail: m.email,
     baseUrl: process.env.BASE_URL || '',
     notifCount,
@@ -420,12 +418,10 @@ router.post('/billing/pay/init', requireValidCsrf, async (req, res) => {
     });
     await pool.query(
       `UPDATE payments SET paystack_access_code = $2 WHERE id = $1`,
-      [ins.rows[0].id, data.access_code]
+      [ins.rows[0].id, data.access_code || null]
     );
-    const { publicKey } = await paystackKeys();
     return res.json({
-      access_code: data.access_code,
-      publicKey,
+      authorization_url: data.authorization_url,
       reference: ref,
     });
   } catch (e) {
