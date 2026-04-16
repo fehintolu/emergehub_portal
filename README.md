@@ -42,6 +42,18 @@ cd /apps/emergehub-portal && npm run setup-db
 
 3. Card payments: server initializes a transaction and returns Paystack’s `authorization_url`; the member is redirected to Paystack Checkout, then back to the portal. **Always** trust payment state from the webhook after server-side verification, not the browser return alone.
 
+## Email (Resend)
+
+Transactional email (verification, password reset, invoices, payments, service updates, support) uses **[Resend](https://resend.com)** when configured.
+
+1. Create an API key in the [Resend dashboard](https://resend.com/api-keys).
+2. **Verify the domain** `emergehub.com.ng` in Resend and add the DNS records they provide.
+3. Set in `.env`:
+   - **`RESEND_API_KEY`** — your Resend API key (required for sending).
+   - **`RESEND_FROM`** (optional) — defaults to **`no-reply@emergehub.com.ng`**.
+
+If `RESEND_API_KEY` is not set, the app falls back to **`SMTP_*`** (nodemailer) when `SMTP_HOST` and `SMTP_FROM` are configured.
+
 ## Default portal admin (seed)
 
 After `npm run setup-db`, sign in at **`/admin/login`**:
@@ -62,7 +74,9 @@ After `npm run setup-db`, sign in at **`/admin/login`**:
 | `ADMIN_SESSION_SECRET` | Secret for admin cookie sessions |
 | `COOKIE_SECURE` | Set `1` in production (HTTPS) |
 | `TRUST_PROXY` | Set `1` behind nginx |
-| `SMTP_*` | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` for nodemailer |
+| `RESEND_API_KEY` | **Resend API key** — primary transport for all portal emails |
+| `RESEND_FROM` | Sender address (default `no-reply@emergehub.com.ng`); must be allowed in Resend for your domain |
+| `SMTP_*` | Optional **fallback** if Resend is unset: `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` |
 | `PAYSTACK_PUBLIC_KEY` / `PAYSTACK_SECRET_KEY` | Optional; can be overridden in admin settings |
 | `UPLOAD_DIR` | Absolute path for uploaded files (outside nginx root) |
 | `MAX_UPLOAD_MB` | Per-file limit (default 10) |
@@ -71,7 +85,7 @@ Copy `.env.example` to `.env` and fill in values.
 
 ## Stack
 
-- Node **18+**, **Express 5**, **EJS**, **PostgreSQL** (`pg`), **connect-pg-simple** (sessions in `member_sessions` and `portal_admin_sessions`), **bcryptjs**, **nodemailer**, **helmet**, **express-rate-limit**, **multer**.
+- Node **18+**, **Express 5**, **EJS**, **PostgreSQL** (`pg`), **connect-pg-simple** (sessions in `member_sessions` and `portal_admin_sessions`), **bcryptjs**, **Resend** + **nodemailer** (SMTP fallback), **helmet**, **express-rate-limit**, **multer**.
 
 ## Isolation
 
