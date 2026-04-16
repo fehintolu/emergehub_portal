@@ -50,7 +50,9 @@ Transactional email (verification, password reset, invoices, payments, service u
 2. **Verify the domain** `emergehub.com.ng` in Resend and add the DNS records they provide.
 3. Set in `.env`:
    - **`RESEND_API_KEY`** — your Resend API key (required for sending).
-   - **`RESEND_FROM`** (optional) — defaults to **`no-reply@emergehub.com.ng`**.
+   - **`RESEND_FROM`** (optional) — defaults to **`no-reply@emergehub.com.ng`** (use `Name <no-reply@emergehub.com.ng>` if you want a display name).
+
+Until **emergehub.com.ng** is verified in Resend, API calls will return an error and verification emails will not be delivered. The portal shows a clear message on “Resend verification” when this happens.
 
 If `RESEND_API_KEY` is not set, the app falls back to **`SMTP_*`** (nodemailer) when `SMTP_HOST` and `SMTP_FROM` are configured.
 

@@ -8,6 +8,7 @@ const {
   sendVerificationEmail,
   sendPasswordResetEmail,
 } = require('../lib/mail');
+const { unreadCount } = require('../lib/notifications');
 
 const router = express.Router();
 
@@ -195,11 +196,20 @@ router.get('/verify', async (req, res) => {
   });
 });
 
-router.get('/verify-required', (req, res) => {
+router.get('/verify-required', async (req, res) => {
   if (!req.session.memberId) return res.redirect('/auth/login');
+  let notifCount = 0;
+  try {
+    notifCount = await unreadCount(req.session.memberId);
+  } catch {
+    /* ignore */
+  }
   res.render('auth/verify-required', {
     layout: 'layouts/member',
     title: 'Verify your email',
+    mail: req.query.mail || '',
+    code: String(req.query.code || ''),
+    notifCount,
   });
 });
 
@@ -214,15 +224,28 @@ router.post('/resend-verification', requireValidCsrf, async (req, res) => {
     [req.session.memberId, token, expires]
   );
   const m = rows[0];
-  if (m) {
-    const base = process.env.BASE_URL || '';
-    await sendVerificationEmail({
+  if (!m) {
+    return res.redirect('/auth/verify-required?mail=fail&code=no_member');
+  }
+  const base = process.env.BASE_URL || '';
+  try {
+    const result = await sendVerificationEmail({
       to: m.email,
       name: m.full_name,
       verifyUrl: `${base}/auth/verify?token=${encodeURIComponent(token)}`,
     });
+    if (!result || result.sent === false) {
+      return res.redirect('/auth/verify-required?mail=fail&code=not_configured');
+    }
+    return res.redirect('/auth/verify-required?mail=sent');
+  } catch (e) {
+    const msg = String(e.message || e).toLowerCase();
+    console.error('[auth] resend verification email', e.message || e);
+    if (msg.includes('not verified') || msg.includes('domain')) {
+      return res.redirect('/auth/verify-required?mail=fail&code=domain');
+    }
+    return res.redirect('/auth/verify-required?mail=fail&code=send');
   }
-  res.redirect('/auth/verify-required');
 });
 
 router.get('/forgot-password', (req, res) => {

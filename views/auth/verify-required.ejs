@@ -1,3 +1,21 @@
+<% if (mail === 'sent') { %>
+  <div class="alert alert-success">Verification email sent. Check your inbox and spam folder.</div>
+<% } %>
+<% if (mail === 'fail') { %>
+  <div class="alert alert-error">
+    <% if (code === 'domain') { %>
+      <strong>Email could not be sent from this domain yet.</strong>
+      In the <a href="https://resend.com/domains" target="_blank" rel="noopener">Resend dashboard</a>, add and verify <strong>emergehub.com.ng</strong> (DNS records). Until the domain is verified, Resend will reject messages from <code>no-reply@emergehub.com.ng</code>.
+    <% } else if (code === 'not_configured') { %>
+      <strong>Email is not configured on the server.</strong> Set <code>RESEND_API_KEY</code> (or SMTP) in the portal <code>.env</code> and restart the app.
+    <% } else if (code === 'no_member') { %>
+      We could not load your account. Try signing out and back in.
+    <% } else { %>
+      <strong>Something went wrong sending the email.</strong> Please try again later or contact support if it continues.
+    <% } %>
+  </div>
+<% } %>
+
 <div class="card">
   <h2 style="margin-top:0;">Verify your email</h2>
   <p>Please verify your email address to use the member portal.</p>
