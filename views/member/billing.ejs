@@ -1,33 +1,35 @@
+<% var invList = (typeof outstanding !== 'undefined' && outstanding && Array.isArray(outstanding)) ? outstanding : []; %>
+<% var histList = (typeof history !== 'undefined' && history && Array.isArray(history)) ? history : []; %>
 <% if (typeof bookedBanner !== 'undefined' && bookedBanner) { %>
   <div class="alert alert-success" style="margin-bottom:16px;">
     Meeting room booking created. Pay within 2 hours to confirm your slot.
     <% if (typeof bookingRef === 'string' && bookingRef) { %> Reference: <strong><%= bookingRef %></strong>.<% } %>
   </div>
 <% } %>
-<% if (typeof invoiceFocus === 'string' && invoiceFocus && !outstanding.some(function (i) { return i.id === invoiceFocus; })) { %>
+<% if (typeof invoiceFocus === 'string' && invoiceFocus && !invList.some(function (i) { return String(i.id) === invoiceFocus; })) { %>
   <div class="alert alert-error" style="margin-bottom:16px;">That invoice is not in your outstanding list (it may already be paid or cancelled).</div>
 <% } %>
 <div class="section-header" style="margin-top:0;">
   <span class="section-title">Outstanding invoices</span>
 </div>
-<% if (!outstanding.length) { %>
+<% if (!invList.length) { %>
   <div class="activity-card" style="margin-bottom:24px;">
     <div class="activity-empty" style="padding:32px 20px;">
       <p>None — you are up to date.</p>
     </div>
   </div>
 <% } %>
-<% outstanding.forEach(function (inv) { %>
-  <div class="card" id="invoice-<%= inv.id %>" style="<%= inv.status === 'overdue' ? 'border:2px solid #b00020;' : '' %><%= (typeof invoiceFocus === 'string' && invoiceFocus === inv.id) ? 'box-shadow:0 0 0 3px rgba(97,5,54,0.35);' : '' %>">
+<% invList.forEach(function (inv) { %>
+  <div class="card" id="invoice-<%= inv.id %>" style="<%= inv.status === 'overdue' ? 'border:2px solid #b00020;' : '' %><%= (typeof invoiceFocus === 'string' && invoiceFocus === String(inv.id)) ? 'box-shadow:0 0 0 3px rgba(97,5,54,0.35);' : '' %>">
     <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;">
       <strong><%= inv.invoice_number %></strong>
       <span class="badge"><%= inv.status %></span>
     </div>
     <p style="margin:10px 0;"><%= formatNgn(inv.total_cents) %> · Due <%= formatDate(inv.due_date) %></p>
-    <% var ex = typeof invExtras !== 'undefined' && invExtras[inv.id] ? invExtras[inv.id] : null; %>
+    <% var ex = typeof invExtras !== 'undefined' && invExtras ? (invExtras[String(inv.id)] || invExtras[inv.id]) : null; %>
     <% if (ex && ex.links && ex.links.length) { %>
       <p style="font-size:13px;margin:0 0 8px;"><strong>Includes</strong>:
-        <% ex.links.forEach(function (l, idx) { %><%= idx ? ', ' : '' %><%= l.service_name %><% }); %>
+        <% ex.links.forEach(function (l, idx) { %><%= idx ? ', ' : '' %><%= l.service_name || l.sr_title || 'Service' %><% }); %>
       </p>
     <% } %>
     <% if (ex && ex.room) { %>
@@ -69,7 +71,7 @@
   <table class="data">
     <thead><tr><th>Date</th><th>Invoice</th><th>Amount</th><th>Method</th><th>Status</th><th>Receipt</th></tr></thead>
     <tbody>
-      <% history.forEach(function (p) { %>
+      <% histList.forEach(function (p) { %>
         <tr>
           <td><%= formatDateTime(p.created_at) %></td>
           <td><%= p.invoice_number %></td>
@@ -91,7 +93,7 @@
       fetch('/billing/pay/init', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: '_csrf=' + encodeURIComponent(<%- JSON.stringify(csrfToken) %>) + '&invoice_id=' + encodeURIComponent(invoiceId),
+        body: '_csrf=' + encodeURIComponent(<%- JSON.stringify(typeof csrfToken !== 'undefined' ? csrfToken : '') %>) + '&invoice_id=' + encodeURIComponent(invoiceId),
         credentials: 'same-origin'
       }).then(function (r) { return r.json(); }).then(function (data) {
         if (data.error) { alert(data.error); return; }

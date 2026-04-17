@@ -628,55 +628,78 @@ router.post('/services/:id/message', requireValidCsrf, async (req, res) => {
 router.get('/billing', async (req, res) => {
   const m = res.locals.currentMember;
   const today = new Date().toISOString().slice(0, 10);
-  await pool.query(
-    `UPDATE invoices SET status = 'overdue', updated_at = now()
-     WHERE member_id = $1 AND status IN ('unpaid','sent') AND due_date < $2::date AND deleted_at IS NULL`,
-    [m.id, today]
-  );
-  const outstanding = await pool.query(
-    `SELECT * FROM invoices
-     WHERE member_id = $1 AND deleted_at IS NULL AND status IN ('unpaid','sent','overdue','awaiting_confirmation')
-     ORDER BY due_date ASC`,
-    [m.id]
-  );
-  const invExtras = {};
-  if (outstanding.rows.length) {
-    const ids = outstanding.rows.map((r) => r.id);
-    const { rows: linkRows } = await pool.query(
-      `SELECT isl.*, sr.title AS sr_title, sv.name AS service_name
-       FROM invoice_service_links isl
-       JOIN service_requests sr ON sr.id = isl.service_request_id
-       JOIN services sv ON sv.id = sr.service_id
-       WHERE isl.invoice_id = ANY($1::uuid[]) AND isl.deleted_at IS NULL`,
-      [ids]
+  try {
+    await pool.query(
+      `UPDATE invoices SET status = 'overdue', updated_at = now()
+       WHERE member_id = $1 AND status IN ('unpaid','sent') AND due_date < $2::date AND deleted_at IS NULL`,
+      [m.id, today]
     );
-    const { rows: rbRows } = await pool.query(
-      `SELECT rb.*, mr.name AS room_name
-       FROM room_bookings rb
-       JOIN meeting_rooms mr ON mr.id = rb.meeting_room_id
-       WHERE rb.invoice_id = ANY($1::uuid[]) AND rb.deleted_at IS NULL`,
-      [ids]
-    );
-    ids.forEach((iid) => {
-      invExtras[iid] = { links: [], room: null };
-    });
-    linkRows.forEach((l) => {
-      if (!invExtras[l.invoice_id]) invExtras[l.invoice_id] = { links: [], room: null };
-      invExtras[l.invoice_id].links.push(l);
-    });
-    rbRows.forEach((b) => {
-      if (!invExtras[b.invoice_id]) invExtras[b.invoice_id] = { links: [], room: null };
-      invExtras[b.invoice_id].room = b;
-    });
+  } catch (e) {
+    console.error('billing overdue stamp', e.message);
   }
-  const history = await pool.query(
-    `SELECT p.*, i.invoice_number, i.notes
-     FROM payments p
-     JOIN invoices i ON i.id = p.invoice_id
-     WHERE p.member_id = $1 AND p.deleted_at IS NULL
-     ORDER BY p.created_at DESC LIMIT 100`,
-    [m.id]
-  );
+  let invRows = [];
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM invoices
+       WHERE member_id = $1 AND deleted_at IS NULL AND status IN ('unpaid','sent','overdue','awaiting_confirmation')
+       ORDER BY due_date ASC`,
+      [m.id]
+    );
+    invRows = Array.isArray(rows) ? rows : [];
+  } catch (e) {
+    console.error('billing invoices', e);
+    return res.status(500).send('Could not load invoices. Please try again.');
+  }
+  const invExtras = {};
+  if (invRows.length) {
+    const ids = invRows.map((r) => r.id);
+    try {
+      const { rows: linkRows } = await pool.query(
+        `SELECT isl.*, sr.title AS sr_title, sv.name AS service_name
+         FROM invoice_service_links isl
+         LEFT JOIN service_requests sr ON sr.id = isl.service_request_id AND sr.deleted_at IS NULL
+         LEFT JOIN services sv ON sv.id = sr.service_id AND sv.deleted_at IS NULL
+         WHERE isl.invoice_id = ANY($1::uuid[]) AND isl.deleted_at IS NULL`,
+        [ids]
+      );
+      const { rows: rbRows } = await pool.query(
+        `SELECT rb.*, mr.name AS room_name
+         FROM room_bookings rb
+         JOIN meeting_rooms mr ON mr.id = rb.meeting_room_id
+         WHERE rb.invoice_id = ANY($1::uuid[]) AND rb.deleted_at IS NULL`,
+        [ids]
+      );
+      ids.forEach((iid) => {
+        invExtras[String(iid)] = { links: [], room: null };
+      });
+      linkRows.forEach((l) => {
+        const iid = String(l.invoice_id);
+        if (!invExtras[iid]) invExtras[iid] = { links: [], room: null };
+        invExtras[iid].links.push(l);
+      });
+      rbRows.forEach((b) => {
+        const iid = String(b.invoice_id);
+        if (!invExtras[iid]) invExtras[iid] = { links: [], room: null };
+        invExtras[iid].room = b;
+      });
+    } catch (e) {
+      console.error('billing invoice extras', e);
+    }
+  }
+  let historyRows = [];
+  try {
+    const history = await pool.query(
+      `SELECT p.*, i.invoice_number, i.notes
+       FROM payments p
+       JOIN invoices i ON i.id = p.invoice_id
+       WHERE p.member_id = $1 AND p.deleted_at IS NULL
+       ORDER BY p.created_at DESC LIMIT 100`,
+      [m.id]
+    );
+    historyRows = Array.isArray(history.rows) ? history.rows : [];
+  } catch (e) {
+    console.error('billing payments history', e);
+  }
   const bankName = await getSetting('bank_name');
   const accountName = await getSetting('account_name');
   const accountNumber = await getSetting('account_number');
@@ -688,9 +711,9 @@ router.get('/billing', async (req, res) => {
   res.render('member/billing', {
     layout: 'layouts/member',
     title: 'Payments',
-    outstanding: outstanding.rows,
+    outstanding: invRows,
     invExtras,
-    history: history.rows,
+    history: historyRows,
     formatNgn,
     formatDate,
     bankName,
