@@ -14,7 +14,6 @@ const { loadAdmin } = require('./middleware/adminAuth');
 const paystackWebhook = require('./routes/paystackWebhook');
 const authRoutes = require('./routes/auth');
 const memberArea = require('./routes/memberArea');
-const memberMeetingRooms = require('./routes/memberMeetingRooms');
 const adminLogin = require('./routes/adminLogin');
 const adminMain = require('./routes/adminMain');
 const adminMeetingRooms = require('./routes/adminMeetingRooms');
@@ -137,7 +136,6 @@ app.use('/admin', adminLogin);
 app.use('/admin', adminMeetingRooms);
 app.use('/admin', adminMain);
 
-app.use(memberMeetingRooms);
 app.use(memberArea);
 
 app.use((req, res) => {

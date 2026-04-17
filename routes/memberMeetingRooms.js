@@ -1,9 +1,6 @@
 const express = require('express');
 const { pool } = require('../lib/db');
 const { requireValidCsrf } = require('../lib/csrf');
-const { requireMember, requireVerifiedEmail } = require('../middleware/memberAuth');
-const { memberLayoutLocals } = require('../middleware/memberLayoutLocals');
-const { trackMemberSession } = require('../middleware/trackMemberSession');
 const { formatNgn, formatDate, formatDateTime } = require('../lib/format');
 const { nextInvoiceNumber } = require('../lib/invoiceNumber');
 const { getSetting } = require('../lib/portalSettings');
@@ -15,13 +12,7 @@ const { assertSlotBookable } = require('../lib/roomSlot');
 const { loadDiscountTiers, createRoomBookingWithInvoice } = require('../lib/roomBookingInvoice');
 
 const router = express.Router();
-
-router.use(
-  requireMember,
-  requireVerifiedEmail,
-  memberLayoutLocals,
-  trackMemberSession
-);
+/** Middleware is applied by `memberArea` when this router is mounted there. */
 
 function isUuid(s) {
   return typeof s === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);

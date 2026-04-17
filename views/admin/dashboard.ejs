@@ -23,5 +23,5 @@
 
 <h3>Pending room bookings</h3>
 <ul><% queueRooms.forEach(function (b) { %>
-  <li><a href="/admin/rooms"><%= b.room_name %> — <%= b.full_name %> · <%= formatDateTime(b.starts_at) %></a></li>
+  <li><a href="/admin/rooms/legacy"><%= b.room_name %> — <%= b.full_name %> · <%= formatDateTime(b.starts_at) %></a></li>
 <% }); %></ul>

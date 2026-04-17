@@ -37,6 +37,9 @@ router.use(
   trackMemberSession
 );
 
+const memberMeetingRooms = require('./memberMeetingRooms');
+router.use(memberMeetingRooms);
+
 const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, '../data/uploads');
 const maxMb = Number(process.env.MAX_UPLOAD_MB) || 10;
 const storage = multer.memoryStorage();

@@ -1344,7 +1344,11 @@ router.post('/support/:id/assign', requireValidCsrf, async (req, res) => {
   res.redirect(`/admin/support/${req.params.id}`);
 });
 
-router.get('/rooms', async (req, res) => {
+router.get('/rooms', (req, res) => {
+  res.redirect(302, '/admin/meeting-rooms');
+});
+
+router.get('/rooms/legacy', async (req, res) => {
   const { rows } = await pool.query(
     `SELECT b.*, m.full_name FROM meeting_room_bookings b
      JOIN members m ON m.id = b.member_id
@@ -1353,7 +1357,7 @@ router.get('/rooms', async (req, res) => {
   );
   res.render('admin/rooms', {
     layout: 'layouts/admin',
-    title: 'Meeting rooms',
+    title: 'Legacy workspace room requests',
     rows,
     formatDateTime,
   });
@@ -1364,7 +1368,7 @@ router.post('/rooms/:id/approve', requireValidCsrf, async (req, res) => {
     `UPDATE meeting_room_bookings SET status = 'approved', admin_note = $2, updated_at = now() WHERE id = $1`,
     [req.params.id, String(req.body.note || '').trim() || null]
   );
-  res.redirect('/admin/rooms');
+  res.redirect('/admin/rooms/legacy');
 });
 
 router.post('/rooms/:id/reject', requireValidCsrf, async (req, res) => {
@@ -1372,7 +1376,7 @@ router.post('/rooms/:id/reject', requireValidCsrf, async (req, res) => {
     `UPDATE meeting_room_bookings SET status = 'rejected', admin_note = $2, updated_at = now() WHERE id = $1`,
     [req.params.id, String(req.body.note || '').trim() || null]
   );
-  res.redirect('/admin/rooms');
+  res.redirect('/admin/rooms/legacy');
 });
 
 router.post('/rooms/new', requireValidCsrf, async (req, res) => {
@@ -1387,7 +1391,7 @@ router.post('/rooms/new', requireValidCsrf, async (req, res) => {
       String(req.body.purpose || ''),
     ]
   );
-  res.redirect('/admin/rooms');
+  res.redirect('/admin/rooms/legacy');
 });
 
 router.get('/notifications', async (req, res) => {
