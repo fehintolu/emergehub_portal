@@ -35,9 +35,11 @@
   --surface-2: #f7f7f8;
 }
 
-html,
-body {
-  height: 100%;
+/* Use min-height, not height: 100% — otherwise the shell stays viewport-tall while
+   main content grows, so the white .main background ends and content appears to
+   “spill” over the purple page background. */
+html {
+  min-height: 100%;
   background: #2a1a30;
 }
 
@@ -46,7 +48,9 @@ body {
   color: var(--text);
   display: flex;
   min-height: 100vh;
+  min-height: 100dvh;
   align-items: stretch;
+  background: #2a1a30;
 }
 
 a {
@@ -290,16 +294,18 @@ a {
 /* ── Main ────────────────────────────────────── */
 .main {
   margin-left: var(--sidebar-w);
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
   background: var(--bg);
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .member-body {
   padding: 8px 36px 48px;
-  flex: 1;
+  flex: 1 1 auto;
 }
 
 /* Page header */
