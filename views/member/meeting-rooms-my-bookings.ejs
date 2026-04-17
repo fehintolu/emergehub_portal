@@ -38,7 +38,7 @@
             <td style="padding:8px;vertical-align:top;">
               <a href="/meeting-rooms/bookings/<%= r.id %>/confirmation">Print</a>
               <% if (r.status === 'pending_payment' && r.invoice_id) { %>
-                · <a href="/billing">Pay</a>
+                · <a href="/billing?invoice=<%= r.invoice_id %>">Pay invoice</a>
               <% } %>
               <% if (r.status === 'pending_payment' || r.status === 'confirmed') { %>
                 <form method="post" action="/meeting-rooms/bookings/<%= r.id %>/cancel" style="display:inline;margin-left:8px;" onsubmit="return confirm('Cancel this booking?');">

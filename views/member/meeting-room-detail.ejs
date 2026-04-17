@@ -2,7 +2,7 @@
   <div class="alert alert-error">
     <% if (query.err === 'slot') { %>That slot is not available. Pick another time.<% } %>
     <% if (query.err === 'book') { %>We could not complete the booking. Please try again.<% } %>
-    <% if (query.err === 'time') { %>Choose a valid start time.<% } %>
+    <% if (query.err === 'time') { %>Choose a valid start time from the available list.<% } %>
   </div>
 <% } %>
 <div class="card" style="margin-bottom:16px;">
@@ -24,9 +24,10 @@
 
 <div class="card">
   <h3 style="margin-top:0;">Book a slot</h3>
+  <p class="page-lead" style="margin-top:0;">Times follow hub timezone (<strong><%= typeof portalTzName !== 'undefined' ? portalTzName : 'Africa/Lagos' %></strong>). Only openings that fit the room schedule and are free of conflicts are listed.</p>
   <div class="form-row">
-    <label for="starts_at">Start (hub time)</label>
-    <input type="datetime-local" id="starts_at" name="starts_at" required />
+    <label for="book_date">Date</label>
+    <input type="date" id="book_date" name="book_date" required min="<%= typeof minBookDate !== 'undefined' ? minBookDate : '' %>" />
   </div>
   <div class="form-row">
     <label for="duration_minutes">Duration (minutes)</label>
@@ -36,7 +37,17 @@
     <label for="purpose">Purpose (optional)</label>
     <textarea id="purpose" name="purpose" rows="2"></textarea>
   </div>
-  <button type="button" class="btn" id="btn-quote">Update quote</button>
+  <button type="button" class="btn" id="btn-load-slots">Show available start times</button>
+
+  <div class="form-row" id="slot-row" style="margin-top:16px;display:none;">
+    <label for="slot_select">Start time</label>
+    <select id="slot_select" aria-label="Available start times">
+      <option value="">— Select a time —</option>
+    </select>
+  </div>
+  <p id="slots-hint" class="page-lead" style="margin:8px 0 0;display:none;"></p>
+
+  <button type="button" class="btn" id="btn-quote" style="margin-top:12px;display:none;">Refresh quote</button>
 
   <div id="quote-panel" style="margin-top:16px;display:none;">
     <p style="margin:0 0 8px;"><strong>Quote</strong></p>
@@ -57,21 +68,101 @@
 <script>
 (function () {
   var roomId = <%- JSON.stringify(String(room.id)) %>;
-  var btn = document.getElementById('btn-quote');
+  var minDate = <%- JSON.stringify(String(typeof minBookDate !== 'undefined' ? minBookDate : '')) %>;
+  var tzName = <%- JSON.stringify(String(typeof portalTzName !== 'undefined' ? portalTzName : 'Africa/Lagos')) %>;
+  var dateEl = document.getElementById('book_date');
+  var durEl = document.getElementById('duration_minutes');
+  var slotRow = document.getElementById('slot-row');
+  var slotSelect = document.getElementById('slot_select');
+  var slotsHint = document.getElementById('slots-hint');
+  var btnSlots = document.getElementById('btn-load-slots');
+  var btnQuote = document.getElementById('btn-quote');
   var panel = document.getElementById('quote-panel');
   var lines = document.getElementById('quote-lines');
   var totalEl = document.getElementById('quote-total');
   var slotEl = document.getElementById('quote-slot');
   var bookForm = document.getElementById('book-form');
+  if (minDate) dateEl.value = minDate;
+  function resetSlots() {
+    slotRow.style.display = 'none';
+    slotSelect.innerHTML = '<option value="">— Select a time —</option>';
+    panel.style.display = 'none';
+    bookForm.style.display = 'none';
+    slotsHint.style.display = 'none';
+    btnQuote.style.display = 'none';
+  }
+  dateEl.addEventListener('change', resetSlots);
+  durEl.addEventListener('change', resetSlots);
   function fmtNgn(cents) {
     var n = Number(cents) || 0;
     return new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(n / 100);
   }
+  function labelForIso(iso) {
+    try {
+      var d = new Date(iso);
+      return d.toLocaleString(undefined, { timeZone: tzName, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    } catch (e) {
+      return iso;
+    }
+  }
+  async function loadSlots() {
+    var date = dateEl.value;
+    var dur = durEl.value;
+    if (!date) { alert('Pick a date.'); return; }
+    btnSlots.disabled = true;
+    slotsHint.style.display = 'none';
+    slotSelect.innerHTML = '<option value="">— Select a time —</option>';
+    bookForm.style.display = 'none';
+    panel.style.display = 'none';
+    btnQuote.style.display = 'none';
+    try {
+      var url = '/meeting-rooms/' + roomId + '/slots?date=' + encodeURIComponent(date) + '&duration_minutes=' + encodeURIComponent(dur);
+      var res = await fetch(url);
+      var data = await res.json();
+      if (!data.ok) { alert('Could not load availability.'); return; }
+      if (data.past) {
+        slotRow.style.display = 'none';
+        slotsHint.textContent = 'Pick today or a future date.';
+        slotsHint.style.display = 'block';
+        return;
+      }
+      if (data.closed) {
+        slotRow.style.display = 'none';
+        slotsHint.textContent = 'The hub is closed on that day.';
+        slotsHint.style.display = 'block';
+        return;
+      }
+      if (data.noHours) {
+        slotRow.style.display = 'none';
+        slotsHint.textContent = 'Opening hours are not configured for that day.';
+        slotsHint.style.display = 'block';
+        return;
+      }
+      if (!data.slots || !data.slots.length) {
+        slotRow.style.display = 'none';
+        slotsHint.textContent = 'No free slots for that duration on this date. Try another date or shorter duration.';
+        slotsHint.style.display = 'block';
+        return;
+      }
+      slotRow.style.display = 'block';
+      data.slots.forEach(function (iso) {
+        var opt = document.createElement('option');
+        opt.value = iso;
+        opt.textContent = labelForIso(iso);
+        slotSelect.appendChild(opt);
+      });
+      slotsHint.textContent = data.slots.length + ' opening(s) available.';
+      slotsHint.style.display = 'block';
+      btnQuote.style.display = 'inline-block';
+    } finally {
+      btnSlots.disabled = false;
+    }
+  }
   async function runQuote() {
-    var starts = document.getElementById('starts_at').value;
-    var dur = document.getElementById('duration_minutes').value;
-    if (!starts) { alert('Pick a start time.'); return; }
-    var url = '/meeting-rooms/' + roomId + '/quote?starts_at=' + encodeURIComponent(starts) + '&duration_minutes=' + encodeURIComponent(dur);
+    var iso = slotSelect.value;
+    var dur = durEl.value;
+    if (!iso) { alert('Select a start time from the list.'); return; }
+    var url = '/meeting-rooms/' + roomId + '/quote?starts_at=' + encodeURIComponent(iso) + '&duration_minutes=' + encodeURIComponent(dur);
     var res = await fetch(url);
     var data = await res.json();
     if (!data.ok) { alert('Could not load quote.'); return; }
@@ -88,18 +179,26 @@
     }
     totalEl.textContent = 'Total due: ' + fmtNgn(q.total_cents);
     if (data.bookable) {
-      slotEl.textContent = 'This slot is available. You will have 2 hours to pay after booking.';
+      slotEl.textContent = 'This slot is available. After booking you will go to Billing to pay online or upload bank proof.';
       slotEl.style.color = '';
       bookForm.style.display = 'block';
-      document.getElementById('book_starts_at').value = starts;
+      document.getElementById('book_starts_at').value = iso;
       document.getElementById('book_duration_minutes').value = String(q.durationMinutes);
     } else {
-      slotEl.textContent = 'This slot is not available (' + (data.bookableError || 'check hours and conflicts') + ').';
+      slotEl.textContent = 'This slot is no longer available (' + (data.bookableError || 'try another time') + '). Reload the list.';
       slotEl.style.color = '#b42318';
       bookForm.style.display = 'none';
     }
   }
-  btn.addEventListener('click', runQuote);
+  btnSlots.addEventListener('click', loadSlots);
+  btnQuote.addEventListener('click', runQuote);
+  slotSelect.addEventListener('change', function () {
+    if (slotSelect.value) runQuote();
+    else {
+      panel.style.display = 'none';
+      bookForm.style.display = 'none';
+    }
+  });
   bookForm.addEventListener('submit', function () {
     document.getElementById('book_purpose').value = document.getElementById('purpose').value;
   });

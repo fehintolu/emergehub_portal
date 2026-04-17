@@ -7,9 +7,10 @@ const { getSetting } = require('../lib/portalSettings');
 const { unreadCount } = require('../lib/notifications');
 const { logActivity } = require('../lib/activity');
 const { sendServiceRequestInvoiceNotifications } = require('../lib/serviceRequestInvoice');
-const { computeRoomQuote } = require('../lib/roomQuote');
+const { computeRoomQuote, portalTz } = require('../lib/roomQuote');
 const { assertSlotBookable } = require('../lib/roomSlot');
 const { loadDiscountTiers, createRoomBookingWithInvoice } = require('../lib/roomBookingInvoice');
+const { listAvailableSlotStarts } = require('../lib/roomAvailableSlots');
 
 const router = express.Router();
 /** Middleware is applied by `memberArea` when this router is mounted there. */
@@ -198,6 +199,26 @@ router.get('/meeting-rooms/:roomId/quote', async (req, res) => {
   });
 });
 
+router.get('/meeting-rooms/:roomId/slots', async (req, res) => {
+  const roomId = req.params.roomId;
+  if (!isUuid(roomId)) return res.status(404).json({ ok: false, error: 'not_found' });
+  const date = String(req.query.date || '');
+  const durationMinutes = Math.max(15, Math.floor(Number(req.query.duration_minutes || 60)));
+  const { rows: rm } = await pool.query(
+    `SELECT id FROM meeting_rooms WHERE id = $1::uuid AND active = true AND deleted_at IS NULL`,
+    [roomId]
+  );
+  if (!rm[0]) return res.status(404).json({ ok: false, error: 'not_found' });
+  try {
+    const r = await listAvailableSlotStarts(pool, roomId, date, durationMinutes);
+    return res.json({ ok: true, ...r });
+  } catch (e) {
+    if (e.code === 'BAD_DATE') return res.status(400).json({ ok: false, error: 'bad_date' });
+    console.error(e);
+    return res.status(500).json({ ok: false, error: 'server' });
+  }
+});
+
 router.get('/meeting-rooms/:roomId/busy', async (req, res) => {
   const roomId = req.params.roomId;
   if (!isUuid(roomId)) return res.status(404).json({ ok: false });
@@ -247,15 +268,21 @@ router.get('/meeting-rooms/:roomId', async (req, res) => {
   const room = rows[0];
   if (!room) return res.status(404).send('Not found');
   const tiers = await loadDiscountTiers(pool, roomId);
+  const { rows: md } = await pool.query(
+    `SELECT to_char((now() AT TIME ZONE $1::text)::date, 'YYYY-MM-DD') AS min_date`,
+    [portalTz()]
+  );
   res.render('member/meeting-room-detail', {
     layout: 'layouts/member',
     title: room.name,
-    pageSub: 'Choose a start time and duration for a live quote',
+    pageSub: 'Pick a hub date, duration, then an available start time',
     room,
     tiers,
     formatNgn,
     notifCount: await unreadCount(m.id),
     query: req.query,
+    minBookDate: md[0].min_date,
+    portalTzName: portalTz(),
   });
 });
 
@@ -316,6 +343,7 @@ router.post('/meeting-rooms/:roomId/book', requireValidCsrf, async (req, res) =>
     entityId: summary.bookingId,
   });
 
+  const billingPath = `/billing?invoice=${encodeURIComponent(summary.invoiceId)}`;
   await sendServiceRequestInvoiceNotifications({
     memberId: m.id,
     memberEmail: m.email,
@@ -328,9 +356,13 @@ router.post('/meeting-rooms/:roomId/book', requireValidCsrf, async (req, res) =>
     serviceRequestId: null,
     title: 'Invoice for meeting room',
     message: `Invoice ${invNo} for ${room.name}. Pay within 2 hours to confirm your slot.`,
+    linkUrl: billingPath,
+    billingPath,
   });
 
-  res.redirect(`/meeting-rooms/my-bookings?msg=booked&ref=${encodeURIComponent(summary.bookingRef)}`);
+  res.redirect(
+    `${billingPath}&booked=1&ref=${encodeURIComponent(summary.bookingRef)}`
+  );
 });
 
 module.exports = router;

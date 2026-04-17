@@ -1,3 +1,12 @@
+<% if (typeof bookedBanner !== 'undefined' && bookedBanner) { %>
+  <div class="alert alert-success" style="margin-bottom:16px;">
+    Meeting room booking created. Pay within 2 hours to confirm your slot.
+    <% if (typeof bookingRef === 'string' && bookingRef) { %> Reference: <strong><%= bookingRef %></strong>.<% } %>
+  </div>
+<% } %>
+<% if (typeof invoiceFocus === 'string' && invoiceFocus && !outstanding.some(function (i) { return i.id === invoiceFocus; })) { %>
+  <div class="alert alert-error" style="margin-bottom:16px;">That invoice is not in your outstanding list (it may already be paid or cancelled).</div>
+<% } %>
 <div class="section-header" style="margin-top:0;">
   <span class="section-title">Outstanding invoices</span>
 </div>
@@ -9,7 +18,7 @@
   </div>
 <% } %>
 <% outstanding.forEach(function (inv) { %>
-  <div class="card" style="<%= inv.status === 'overdue' ? 'border:2px solid #b00020;' : '' %>">
+  <div class="card" id="invoice-<%= inv.id %>" style="<%= inv.status === 'overdue' ? 'border:2px solid #b00020;' : '' %><%= (typeof invoiceFocus === 'string' && invoiceFocus === inv.id) ? 'box-shadow:0 0 0 3px rgba(97,5,54,0.35);' : '' %>">
     <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;">
       <strong><%= inv.invoice_number %></strong>
       <span class="badge"><%= inv.status %></span>
@@ -95,4 +104,10 @@
     });
   });
 })();
+<% if (typeof invoiceFocus === 'string' && invoiceFocus) { %>
+(function () {
+  var el = document.getElementById('invoice-<%= invoiceFocus %>');
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+})();
+<% } %>
 </script>

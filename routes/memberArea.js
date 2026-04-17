@@ -30,6 +30,14 @@ const {
 } = require('../lib/serviceRequestInvoice');
 
 const router = express.Router();
+
+function isUuidString(s) {
+  return (
+    typeof s === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s)
+  );
+}
+
 router.use(
   requireMember,
   requireVerifiedEmail,
@@ -673,6 +681,10 @@ router.get('/billing', async (req, res) => {
   const accountName = await getSetting('account_name');
   const accountNumber = await getSetting('account_number');
   const notifCount = await unreadCount(m.id);
+  const invoiceFocus = isUuidString(req.query.invoice) ? req.query.invoice : null;
+  const bookedBanner = req.query.booked === '1';
+  const bookingRef =
+    typeof req.query.ref === 'string' && req.query.ref.length <= 80 ? req.query.ref : null;
   res.render('member/billing', {
     layout: 'layouts/member',
     title: 'Payments',
@@ -686,6 +698,9 @@ router.get('/billing', async (req, res) => {
     accountNumber,
     baseUrl: process.env.BASE_URL || '',
     notifCount,
+    invoiceFocus,
+    bookedBanner,
+    bookingRef,
   });
 });
 
