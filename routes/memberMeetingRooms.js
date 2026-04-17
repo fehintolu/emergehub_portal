@@ -11,6 +11,8 @@ const { computeRoomQuote, portalTz } = require('../lib/roomQuote');
 const { assertSlotBookable } = require('../lib/roomSlot');
 const { loadDiscountTiers, createRoomBookingWithInvoice } = require('../lib/roomBookingInvoice');
 const { listAvailableSlotStarts } = require('../lib/roomAvailableSlots');
+const { getDayTimeline } = require('../lib/roomDayTimeline');
+const { getMonthDayStates } = require('../lib/roomMonthAvailability');
 
 const router = express.Router();
 /** Middleware is applied by `memberArea` when this router is mounted there. */
@@ -219,6 +221,51 @@ router.get('/meeting-rooms/:roomId/slots', async (req, res) => {
   }
 });
 
+router.get('/meeting-rooms/:roomId/availability-month', async (req, res) => {
+  const roomId = req.params.roomId;
+  if (!isUuid(roomId)) return res.status(404).json({ ok: false, error: 'not_found' });
+  const y = Math.floor(Number(req.query.year));
+  const m = Math.floor(Number(req.query.month));
+  if (!Number.isFinite(y) || y < 2000 || y > 2100 || !Number.isFinite(m) || m < 1 || m > 12) {
+    return res.status(400).json({ ok: false, error: 'bad_month' });
+  }
+  const { rows: rm } = await pool.query(
+    `SELECT id FROM meeting_rooms WHERE id = $1::uuid AND active = true AND deleted_at IS NULL`,
+    [roomId]
+  );
+  if (!rm[0]) return res.status(404).json({ ok: false, error: 'not_found' });
+  const { rows: md } = await pool.query(
+    `SELECT to_char((now() AT TIME ZONE $1::text)::date, 'YYYY-MM-DD') AS min_date`,
+    [portalTz()]
+  );
+  try {
+    const out = await getMonthDayStates(pool, roomId, y, m, md[0].min_date);
+    return res.json({ ok: true, ...out });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ ok: false, error: 'server' });
+  }
+});
+
+router.get('/meeting-rooms/:roomId/day-blocks', async (req, res) => {
+  const roomId = req.params.roomId;
+  if (!isUuid(roomId)) return res.status(404).json({ ok: false, error: 'not_found' });
+  const date = String(req.query.date || '');
+  const { rows: rm } = await pool.query(
+    `SELECT id FROM meeting_rooms WHERE id = $1::uuid AND active = true AND deleted_at IS NULL`,
+    [roomId]
+  );
+  if (!rm[0]) return res.status(404).json({ ok: false, error: 'not_found' });
+  try {
+    const tl = await getDayTimeline(pool, roomId, date);
+    return res.json({ ok: true, date, ...tl });
+  } catch (e) {
+    if (e.code === 'BAD_DATE') return res.status(400).json({ ok: false, error: 'bad_date' });
+    console.error(e);
+    return res.status(500).json({ ok: false, error: 'server' });
+  }
+});
+
 router.get('/meeting-rooms/:roomId/busy', async (req, res) => {
   const roomId = req.params.roomId;
   if (!isUuid(roomId)) return res.status(404).json({ ok: false });
@@ -275,7 +322,7 @@ router.get('/meeting-rooms/:roomId', async (req, res) => {
   res.render('member/meeting-room-detail', {
     layout: 'layouts/member',
     title: room.name,
-    pageSub: 'Pick a hub date, duration, then an available start time',
+    pageSub: 'Choose a day, then your time range — hub time (' + portalTz() + ')',
     room,
     tiers,
     formatNgn,
@@ -289,12 +336,29 @@ router.get('/meeting-rooms/:roomId', async (req, res) => {
 router.post('/meeting-rooms/:roomId/book', requireValidCsrf, async (req, res) => {
   const m = res.locals.currentMember;
   const roomId = req.params.roomId;
-  if (!isUuid(roomId)) return res.status(404).send('Not found');
+  const jsonOut = String(req.get('Accept') || '').includes('application/json');
+
+  function sendSlotConflict() {
+    if (jsonOut) {
+      return res.status(409).json({ ok: false, error: 'slot_taken' });
+    }
+    return res.redirect(`/meeting-rooms/${roomId}?err=slot`);
+  }
+  function sendBadTime() {
+    if (jsonOut) {
+      return res.status(400).json({ ok: false, error: 'bad_time' });
+    }
+    return res.redirect(`/meeting-rooms/${roomId}?err=time`);
+  }
+  if (!isUuid(roomId)) {
+    if (jsonOut) return res.status(404).json({ ok: false, error: 'not_found' });
+    return res.status(404).send('Not found');
+  }
   const starts = new Date(String(req.body.starts_at || ''));
   const durationMinutes = Math.max(1, Math.floor(Number(req.body.duration_minutes || 60)));
   const purpose = String(req.body.purpose || '').trim();
   if (Number.isNaN(starts.getTime())) {
-    return res.redirect(`/meeting-rooms/${roomId}?err=time`);
+    return sendBadTime();
   }
   const ends = new Date(starts.getTime() + durationMinutes * 60 * 1000);
 
@@ -303,7 +367,10 @@ router.post('/meeting-rooms/:roomId/book', requireValidCsrf, async (req, res) =>
     [roomId]
   );
   const room = rm[0];
-  if (!room) return res.status(404).send('Not found');
+  if (!room) {
+    if (jsonOut) return res.status(404).json({ ok: false, error: 'not_found' });
+    return res.status(404).send('Not found');
+  }
 
   const dueDays = Number((await getSetting('default_invoice_due_days', '7')) || 7) || 7;
   const due = new Date();
@@ -328,7 +395,11 @@ router.post('/meeting-rooms/:roomId/book', requireValidCsrf, async (req, res) =>
   } catch (e) {
     await client.query('ROLLBACK');
     console.error(e);
-    const q = e.code === 'OVERLAP' || e.code === 'BLOCK' || e.code === 'HOURS' || e.code === 'SCHEDULE' ? 'slot' : 'book';
+    const slotErr =
+      e.code === 'OVERLAP' || e.code === 'BLOCK' || e.code === 'HOURS' || e.code === 'SCHEDULE';
+    if (slotErr) return sendSlotConflict();
+    const q = 'book';
+    if (jsonOut) return res.status(500).json({ ok: false, error: q });
     return res.redirect(`/meeting-rooms/${roomId}?err=${q}`);
   } finally {
     client.release();
@@ -360,9 +431,11 @@ router.post('/meeting-rooms/:roomId/book', requireValidCsrf, async (req, res) =>
     billingPath,
   });
 
-  res.redirect(
-    `${billingPath}&booked=1&ref=${encodeURIComponent(summary.bookingRef)}`
-  );
+  const redirectUrl = `${billingPath}&booked=1&ref=${encodeURIComponent(summary.bookingRef)}`;
+  if (jsonOut) {
+    return res.json({ ok: true, redirect: redirectUrl });
+  }
+  return res.redirect(redirectUrl);
 });
 
 module.exports = router;
