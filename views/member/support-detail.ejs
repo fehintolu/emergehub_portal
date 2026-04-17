@@ -1,25 +1,25 @@
-<p><a href="/support">← Tickets</a></p>
-<h2><%= ticket.subject %></h2>
+<a href="/support" class="back-link">← Tickets</a>
+<h2 class="page-title" style="margin-bottom:4px;"><%= ticket.subject %></h2>
 <p><span class="badge"><%= ticket.status %></span> · <%= ticket.category %></p>
 <% if (canReopenTicket) { %>
-  <form method="post" action="/support/<%= ticket.id %>/reopen" style="margin-bottom:1rem;">
+  <form method="post" action="/support/<%= ticket.id %>/reopen" style="margin:16px 0;">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
     <button type="submit" class="btn btn-secondary">Reopen ticket</button>
   </form>
 <% } %>
-<% msgs.forEach(function (m) { %>
-  <div class="card" style="background:#fff;">
-    <small><%= m.sender_type %> · <%= formatDateTime(m.created_at) %></small>
-    <p><%= m.body %></p>
-    <% if (m.attachment_document_id) { %>
-      <p><a href="/documents/download/<%= m.attachment_document_id %>">Download attachment</a><% if (m.attach_name) { %> (<%= m.attach_name %>)<% } %></p>
+<% msgs.forEach(function (msg) { %>
+  <div class="card" style="background:var(--surface-2);">
+    <small style="color:var(--text-secondary);"><%= msg.sender_type %> · <%= formatDateTime(msg.created_at) %></small>
+    <p style="margin-top:8px;"><%= msg.body %></p>
+    <% if (msg.attachment_document_id) { %>
+      <p style="margin-top:8px;"><a href="/documents/download/<%= msg.attachment_document_id %>">Download attachment</a><% if (msg.attach_name) { %> (<%= msg.attach_name %>)<% } %></p>
     <% } %>
   </div>
 <% }); %>
 <form method="post" action="/support/<%= ticket.id %>/reply" enctype="multipart/form-data">
   <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-  <div class="form-row"><textarea name="body" required placeholder="Your reply"></textarea></div>
-  <div class="form-row"><input type="file" name="attachment" accept=".pdf,.jpg,.jpeg,.png,.docx" /></div>
+  <div class="form-row"><label>Your reply</label><textarea name="body" required placeholder="Your reply"></textarea></div>
+  <div class="form-row"><label>Attachment</label><input type="file" name="attachment" accept=".pdf,.jpg,.jpeg,.png,.docx" /></div>
   <button type="submit" class="btn btn-primary">Send reply</button>
 </form>
-<p style="margin-top:2rem;"><a class="btn btn-ghost" href="https://wa.me/2348149041843" target="_blank" rel="noopener">Prefer WhatsApp?</a></p>
+<p style="margin-top:24px;"><a class="btn btn-ghost" href="https://wa.me/2348149041843" target="_blank" rel="noopener">Prefer WhatsApp?</a></p>

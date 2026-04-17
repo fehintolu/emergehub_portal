@@ -1,0 +1,45 @@
+<p class="page-lead"><a href="/admin/meeting-rooms">← Hub</a></p>
+<% if (typeof query !== 'undefined' && query.msg === 'added') { %><div class="alert alert-success">Tier added.</div><% } %>
+<% if (typeof query !== 'undefined' && query.msg === 'deleted') { %><div class="alert alert-success">Tier removed.</div><% } %>
+
+<div class="card" style="margin-bottom:16px;">
+  <h3 style="margin-top:0;">Add tier</h3>
+  <form method="post" action="/admin/meeting-rooms/discount-tiers">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+    <div class="form-row">
+      <label>Room (blank = global default)</label>
+      <select name="meeting_room_id">
+        <option value="">— Global —</option>
+        <% rooms.forEach(function (r) { %>
+          <option value="<%= r.id %>"><%= r.name %></option>
+        <% }); %>
+      </select>
+    </div>
+    <div class="form-row"><label>Minimum booked hours (whole hours)</label><input type="number" name="min_hours" min="0" step="1" value="2" /></div>
+    <div class="form-row"><label>Discount %</label><input type="number" name="discount_percent" min="0" max="100" step="0.01" value="10" /></div>
+    <div class="form-row"><label>Label</label><input name="label" placeholder="Shown on invoices" /></div>
+    <div class="form-row"><label>Sort</label><input type="number" name="sort_order" value="0" /></div>
+    <div class="form-row"><label><input type="checkbox" name="active" value="1" checked /> Active</label></div>
+    <button type="submit" class="btn btn-primary">Add</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0;">Existing tiers</h3>
+  <% if (!rows.length) { %><p style="margin:0;">None.</p><% } else { %>
+    <ul style="padding-left:18px;">
+      <% rows.forEach(function (t) { %>
+        <li style="margin-bottom:10px;">
+          <strong><%= t.discount_percent %>%</strong> from <strong><%= t.min_hours %>h</strong>
+          — <%= t.room_name || 'Global' %>
+          <% if (t.label) { %> (<%= t.label %>)<% } %>
+          <%= t.active ? '' : ' [inactive]' %>
+          <form method="post" action="/admin/meeting-rooms/discount-tiers/<%= t.id %>/delete" style="display:inline;margin-left:8px;" onsubmit="return confirm('Delete tier?');">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <button type="submit" class="btn" style="padding:2px 8px;font-size:12px;">Delete</button>
+          </form>
+        </li>
+      <% }); %>
+    </ul>
+  <% } %>
+</div>

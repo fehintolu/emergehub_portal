@@ -1,0 +1,31 @@
+<p class="page-lead"><a href="/admin/meeting-rooms">← Meeting rooms hub</a></p>
+<% if (typeof query !== 'undefined' && query.msg === 'deleted') { %>
+  <div class="alert alert-success">Room archived.</div>
+<% } %>
+<p><a class="btn btn-primary" href="/admin/meeting-rooms/rooms/new">New room</a></p>
+<% if (!rooms.length) { %>
+  <div class="card"><p style="margin:0;">No rooms yet.</p></div>
+<% } else { %>
+  <div class="card">
+    <table style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left;padding:8px;">Name</th>
+          <th style="text-align:left;padding:8px;">Rate / hr</th>
+          <th style="text-align:left;padding:8px;">Active</th>
+          <th style="text-align:left;padding:8px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% rooms.forEach(function (r) { %>
+          <tr>
+            <td style="padding:8px;"><%= r.name %></td>
+            <td style="padding:8px;"><%= formatNgn(r.hourly_rate_cents) %></td>
+            <td style="padding:8px;"><%= r.active ? 'Yes' : 'No' %></td>
+            <td style="padding:8px;"><a href="/admin/meeting-rooms/rooms/<%= r.id %>/edit">Edit</a></td>
+          </tr>
+        <% }); %>
+      </tbody>
+    </table>
+  </div>
+<% } %>

@@ -1,21 +1,68 @@
 <h2>Create invoice</h2>
+<% if (typeof query !== 'undefined' && query.err === 'lines') { %>
+  <div class="alert alert-error">Add at least one line with a description and a positive amount (or use linked items below).</div>
+<% } %>
+<form method="get" action="/admin/invoices/new" class="card" style="margin-bottom:16px;">
+  <p class="page-lead" style="margin-top:0;">Load a member to attach service requests and unpaid room holds.</p>
+  <div class="form-row" style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;">
+    <div>
+      <label>Member</label>
+      <select name="member_id" onchange="if (this.value) window.location='/admin/invoices/new?member_id='+encodeURIComponent(this.value);">
+        <option value="">— Select —</option>
+        <% members.forEach(function (m) { %>
+          <option value="<%= m.id %>" <%= String(selectedMemberId) === String(m.id) ? 'selected' : '' %>><%= m.full_name %> (<%= m.email %>)</option>
+        <% }); %>
+      </select>
+    </div>
+  </div>
+</form>
+
 <form method="post" action="/admin/invoices/new">
   <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
   <div class="form-row">
     <label>Member</label>
     <select name="member_id" required>
       <% members.forEach(function (m) { %>
-        <option value="<%= m.id %>"><%= m.full_name %> (<%= m.email %>)</option>
+        <option value="<%= m.id %>" <%= String(selectedMemberId) === String(m.id) ? 'selected' : '' %>><%= m.full_name %> (<%= m.email %>)</option>
       <% }); %>
     </select>
   </div>
   <div class="form-row"><label>Due in days</label><input type="number" name="due_days" value="7" min="1" /></div>
   <div class="form-row"><label>Notes</label><textarea name="notes"></textarea></div>
+
+  <% if (selectedMemberId && serviceRequests.length) { %>
+    <h3 style="margin-top:20px;">Service requests (optional)</h3>
+    <p class="page-lead">Tick to snapshot portal price as a line and link the invoice for payment hooks.</p>
+    <% serviceRequests.forEach(function (sr) { %>
+      <div class="form-row" style="margin-bottom:6px;">
+        <label>
+          <input type="checkbox" name="sr_ids" value="<%= sr.id %>" />
+          <strong><%= sr.service_name %></strong> — <%= sr.title %> (<%= sr.status %>)<% if (Number(sr.portal_price_cents) > 0) { %> · <%= formatNgn(sr.portal_price_cents) %><% } else { %> · no fixed portal price<% } %>
+        </label>
+      </div>
+    <% }); %>
+  <% } %>
+
+  <% if (selectedMemberId && roomBookings.length) { %>
+    <h3 style="margin-top:20px;">Meeting room hold (optional)</h3>
+    <p class="page-lead">Link one unpaid room booking; its total is added as a line and the invoice is attached.</p>
+    <div class="form-row">
+      <label>Room booking</label>
+      <select name="room_booking_id">
+        <option value="">— None —</option>
+        <% roomBookings.forEach(function (b) { %>
+          <option value="<%= b.id %>"><%= b.room_name %> · <%= b.booking_reference %> · <%= formatNgn(b.total_cents) %></option>
+        <% }); %>
+      </select>
+    </div>
+  <% } %>
+
+  <h3 style="margin-top:20px;">Line items</h3>
   <% for (var i = 0; i < 6; i++) { %>
     <div class="form-row" style="display:flex;gap:0.5rem;align-items:flex-end;">
       <div style="flex:1;"><label>Line <%= i+1 %> description</label><input type="text" name="line_desc" /></div>
       <div style="width:140px;"><label>Amount (NGN)</label><input type="number" step="0.01" name="line_amount" /></div>
     </div>
   <% } %>
-  <button type="submit" class="btn btn-primary">Create & notify</button>
+  <button type="submit" class="btn btn-primary" style="margin-top:16px;">Create & notify</button>
 </form>

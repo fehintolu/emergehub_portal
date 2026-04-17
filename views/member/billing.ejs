@@ -1,37 +1,61 @@
-<h2>Outstanding invoices</h2>
-<% if (!outstanding.length) { %><p>None — you are up to date.</p><% } %>
+<div class="section-header" style="margin-top:0;">
+  <span class="section-title">Outstanding invoices</span>
+</div>
+<% if (!outstanding.length) { %>
+  <div class="activity-card" style="margin-bottom:24px;">
+    <div class="activity-empty" style="padding:32px 20px;">
+      <p>None — you are up to date.</p>
+    </div>
+  </div>
+<% } %>
 <% outstanding.forEach(function (inv) { %>
   <div class="card" style="<%= inv.status === 'overdue' ? 'border:2px solid #b00020;' : '' %>">
-    <strong><%= inv.invoice_number %></strong>
-    <span class="badge"><%= inv.status %></span>
-    <p><%= formatNgn(inv.total_cents) %> · Due <%= formatDate(inv.due_date) %></p>
+    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;">
+      <strong><%= inv.invoice_number %></strong>
+      <span class="badge"><%= inv.status %></span>
+    </div>
+    <p style="margin:10px 0;"><%= formatNgn(inv.total_cents) %> · Due <%= formatDate(inv.due_date) %></p>
+    <% var ex = typeof invExtras !== 'undefined' && invExtras[inv.id] ? invExtras[inv.id] : null; %>
+    <% if (ex && ex.links && ex.links.length) { %>
+      <p style="font-size:13px;margin:0 0 8px;"><strong>Includes</strong>:
+        <% ex.links.forEach(function (l, idx) { %><%= idx ? ', ' : '' %><%= l.service_name %><% }); %>
+      </p>
+    <% } %>
+    <% if (ex && ex.room) { %>
+      <p style="font-size:13px;margin:0 0 8px;"><strong>Meeting room</strong>: <%= ex.room.room_name %> (<%= ex.room.booking_reference %>)</p>
+    <% } %>
+    <p style="margin:0 0 8px;"><a href="/billing/invoices/<%= inv.id %>/print" target="_blank" rel="noopener">Print invoice</a></p>
     <% if (['unpaid','sent','overdue'].includes(inv.status)) { %>
       <button type="button" class="btn btn-primary pay-now" data-invoice="<%= inv.id %>">Pay now</button>
-      <details style="margin-top:0.5rem;">
-        <summary>I paid by bank transfer</summary>
-        <form method="post" action="/billing/manual" enctype="multipart/form-data" style="margin-top:0.5rem;">
+      <details style="margin-top:12px;">
+        <summary style="cursor:pointer;font-weight:600;color:var(--brand);font-size:13px;">I paid by bank transfer</summary>
+        <form method="post" action="/billing/manual" enctype="multipart/form-data" style="margin-top:12px;">
           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
           <input type="hidden" name="invoice_id" value="<%= inv.id %>" />
-          <p>Upload proof (PDF/JPG/PNG/DOCX)</p>
-          <input type="file" name="proof" required accept=".pdf,.jpg,.jpeg,.png,.docx" />
+          <p class="page-lead" style="margin-bottom:8px;">Upload proof (PDF/JPG/PNG/DOCX)</p>
+          <div class="form-row"><input type="file" name="proof" required accept=".pdf,.jpg,.jpeg,.png,.docx" /></div>
           <button type="submit" class="btn btn-secondary">Submit</button>
         </form>
       </details>
     <% } %>
     <% if (inv.status === 'awaiting_confirmation') { %>
-      <p><em>Awaiting confirmation from EmergeHub.</em></p>
+      <p style="margin-top:10px;"><em>Awaiting confirmation from EmergeHub.</em></p>
     <% } %>
   </div>
 <% }); %>
 
-<h2>Bank transfer</h2>
+<div class="section-header">
+  <span class="section-title">Bank transfer</span>
+</div>
 <div class="card">
   <p><strong><%= bankName || '—' %></strong></p>
   <p>Account name: <%= accountName %></p>
   <p>Account number: <%= accountNumber || '—' %></p>
 </div>
 
-<h2>Payment history</h2>
+<div class="section-header">
+  <span class="section-title">Payment history</span>
+</div>
 <div class="table-wrap">
   <table class="data">
     <thead><tr><th>Date</th><th>Invoice</th><th>Amount</th><th>Method</th><th>Status</th><th>Receipt</th></tr></thead>

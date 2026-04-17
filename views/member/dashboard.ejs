@@ -1,42 +1,239 @@
+<% var unpaidDue = stats.unpaidCount > 0; %>
+<% var usageRows = [
+  { name: 'Hot Desk', color: '#ea580c', days: 0 },
+  { name: 'Private Office', color: '#2563eb', days: 0 },
+  { name: 'Meeting Room', color: '#0d9488', days: 0 },
+  { name: 'Team Suite', color: '#7c3aed', days: 0 },
+]; %>
+<% var usageTotal = usageRows.reduce(function (s, r) { return s + r.days; }, 0); %>
+<% var donutData = usageRows.map(function (r) { return { value: r.days, color: r.color }; }); %>
+
 <% if (showOnboarding) { %>
-  <div class="card" style="border-left:4px solid var(--color-accent);">
-    <strong>Get started</strong>
-    <p>Explore our workspaces and services — request a plan or a service when you are ready.</p>
-    <div class="cta-row">
-      <a class="btn btn-primary" href="/services?tab=request">Request a service</a>
-      <a class="btn btn-ghost" href="/workspace">View workspace</a>
+  <div class="alert alert-success" style="margin-bottom: 16px;">
+    Welcome — explore <strong>My Workspace</strong> and <strong>Services</strong> when you are ready to request a plan or add-ons.
+  </div>
+<% } %>
+
+<div class="filter-bar anim anim-1">
+  <div class="filter-pill">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+    <%= typeof filterMonthStart !== 'undefined' ? filterMonthStart : '' %>
+  </div>
+  <div class="filter-divider"></div>
+  <div class="filter-pill">
+    <%= typeof filterMonthEnd !== 'undefined' ? filterMonthEnd : '' %>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+  </div>
+  <div class="filter-pill" style="margin-left:4px;">
+    Monthly
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+  </div>
+</div>
+
+<div class="stats-row anim anim-2">
+  <div class="stat-cell">
+    <div class="stat-label">Active Services</div>
+    <div class="stat-value-row">
+      <div class="stat-value"><%= stats.activeServices %></div>
+    </div>
+    <div class="stat-trend">
+      <span class="trend-up">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="18 15 12 9 6 15"/></svg>
+        0%
+      </span>
+      &nbsp;vs last month
     </div>
   </div>
-<% } %>
 
-<div class="card-grid">
-  <div class="card stat-card"><span>Active services</span><strong><%= stats.activeServices %></strong></div>
-  <div class="card stat-card"><span>Pending requests</span><strong><%= stats.pendingRequests %></strong></div>
-  <div class="card stat-card">
-    <span>Unpaid invoices</span>
-    <strong><%= stats.unpaidCount %></strong>
-    <small><%= formatNgn(stats.unpaidTotalCents) %></small>
+  <div class="stat-cell">
+    <div class="stat-label">Pending Requests</div>
+    <div class="stat-value-row">
+      <div class="stat-value"><%= stats.pendingRequests %></div>
+    </div>
+    <div class="stat-trend">
+      <span class="trend-up">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="18 15 12 9 6 15"/></svg>
+        0%
+      </span>
+      &nbsp;vs last month
+    </div>
   </div>
-  <div class="card stat-card">
-    <span>Plan</span>
-    <strong><%= stats.daysRemaining != null ? stats.daysRemaining + ' days' : (stats.hasActivePlan ? '—' : 'No active plan') %></strong>
-    <small><%= stats.planLabel %></small>
+
+  <div class="stat-cell">
+    <div class="stat-label">Unpaid Invoices</div>
+    <div class="stat-value-row">
+      <div class="stat-value"><%= formatNgn(stats.unpaidTotalCents) %></div>
+    </div>
+    <div class="stat-trend" style="color: var(--green);"><%= unpaidDue ? (stats.unpaidCount + ' open') : 'All cleared' %></div>
+  </div>
+
+  <div class="stat-cell">
+    <div class="stat-label">Current Plan</div>
+    <% if (stats.hasActivePlan) { %>
+      <div class="stat-plan-name"><%= stats.planLabel %></div>
+      <div class="stat-trend">
+        <% if (stats.daysRemaining != null) { %>
+          <%= stats.daysRemaining %> days to renewal
+        <% } else { %>
+          Active
+        <% } %>
+      </div>
+    <% } else { %>
+      <div class="stat-plan-name">No active plan</div>
+      <div class="stat-trend">
+        <a href="/workspace" style="color:var(--brand);font-weight:600;font-size:11.5px;text-decoration:none;">Explore plans →</a>
+      </div>
+    <% } %>
   </div>
 </div>
 
-<div class="cta-row" style="margin-top:1rem;">
-  <a class="btn btn-primary" href="/services?tab=request">Request a Service</a>
-  <a class="btn btn-secondary" href="/workspace">Book a Meeting Room</a>
-  <a class="btn btn-ghost" href="/billing">Pay Outstanding Invoices</a>
+<div class="content">
+  <div class="anim anim-2" style="margin-bottom:28px;">
+    <div class="section-title">Quick actions</div>
+  </div>
+  <div class="actions-row anim anim-2" style="margin-top:-16px;">
+    <a class="action-cell" href="/services?tab=request">
+      <div class="action-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </div>
+      <div class="action-label">Request a Service</div>
+      <div class="action-desc">Browse available services</div>
+    </a>
+    <a class="action-cell" href="/workspace">
+      <div class="action-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      </div>
+      <div class="action-label">Book a Meeting Room</div>
+      <div class="action-desc">Check availability &amp; reserve</div>
+    </a>
+    <a class="action-cell" href="/billing">
+      <div class="action-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+      </div>
+      <div class="action-label">Pay Invoices</div>
+      <div class="action-desc"><%= formatNgn(stats.unpaidTotalCents) %> currently due</div>
+    </a>
+    <a class="action-cell" href="/documents">
+      <div class="action-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      </div>
+      <div class="action-label">View Documents</div>
+      <div class="action-desc">Agreements &amp; receipts</div>
+    </a>
+  </div>
+
+  <div class="two-col anim anim-3">
+    <div class="col-left">
+      <div class="section-title">Workspace usage</div>
+      <div class="donut-wrap">
+        <div class="donut-container">
+          <canvas id="donutChart" width="200" height="200" data-usage="<%- encodeURIComponent(JSON.stringify(donutData)) %>"></canvas>
+          <div class="donut-label">
+            <div class="donut-label-sub">Total days</div>
+            <div class="donut-label-val"><%= usageTotal %></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-right">
+      <div class="section-title">Service breakdown</div>
+      <table class="sub-table">
+        <thead>
+          <tr>
+            <th>Service type</th>
+            <th>Days used</th>
+            <th>Share</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% usageRows.forEach(function (row) { %>
+            <tr>
+              <td><span class="sub-type"><span class="sub-dot" style="background:<%= row.color %>;"></span><%= row.name %></span></td>
+              <td><%= row.days %></td>
+              <td class="sub-pct"><%= usageTotal ? Math.round((row.days / usageTotal) * 100) + '%' : '—' %></td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="bottom-two anim anim-4">
+    <div class="bottom-col-left">
+      <div class="section-title">Recent activity</div>
+      <% if (!activity.length) { %>
+        <div class="activity-empty">No recent activity yet.</div>
+      <% } else { %>
+        <% activity.forEach(function (a) { %>
+          <% var et = String(a.event_type || '').toLowerCase();
+          var dc = 'green';
+          if (et.indexOf('invoice') >= 0 || et.indexOf('payment') >= 0) dc = 'blue';
+          else if (et.indexOf('service') >= 0 || et.indexOf('request') >= 0) dc = 'orange'; %>
+          <div class="activity-row">
+            <div class="activity-dot <%= dc %>"></div>
+            <div class="activity-body">
+              <div class="activity-title"><%= a.title %><% if (a.body) { %>: <%= a.body %><% } %></div>
+              <div class="activity-meta"><%= formatDateTime(a.created_at) %></div>
+            </div>
+          </div>
+        <% }); %>
+      <% } %>
+    </div>
+    <div class="bottom-col-right">
+      <div class="section-title">Announcements</div>
+      <% if (!announcements || !announcements.length) { %>
+        <div class="activity-empty">No announcements yet — check back soon.</div>
+      <% } else { %>
+        <% announcements.forEach(function (n) { %>
+          <a href="/notifications" class="announce-row">
+            <div class="announce-title"><%= n.title %></div>
+            <div class="announce-body"><%= n.message %></div>
+            <div class="announce-time"><%= formatDateTime(n.created_at) %></div>
+          </a>
+        <% }); %>
+      <% } %>
+    </div>
+  </div>
 </div>
 
-<h3>Recent activity</h3>
-<% if (!activity.length) { %>
-  <p>No recent activity.</p>
-<% } else { %>
-  <ul style="padding-left:1.1rem;">
-    <% activity.forEach(function (a) { %>
-      <li><%= formatDateTime(a.created_at) %> — <%= a.title %><% if (a.body) { %>: <%= a.body %><% } %></li>
-    <% }); %>
-  </ul>
-<% } %>
+<script>
+(function () {
+  var canvas = document.getElementById('donutChart');
+  if (!canvas || !canvas.getContext) return;
+  var raw = canvas.getAttribute('data-usage');
+  var data = [{ value: 0, color: '#ea580c' }, { value: 0, color: '#2563eb' }, { value: 0, color: '#0d9488' }, { value: 0, color: '#7c3aed' }];
+  try {
+    if (raw) data = JSON.parse(decodeURIComponent(raw));
+  } catch (e) {}
+  var ctx = canvas.getContext('2d');
+  var dpr = window.devicePixelRatio || 1;
+  canvas.width = 200 * dpr;
+  canvas.height = 200 * dpr;
+  canvas.style.width = '200px';
+  canvas.style.height = '200px';
+  ctx.scale(dpr, dpr);
+  var cx = 100, cy = 100, r = 80, thickness = 22;
+  var total = data.reduce(function (s, d) { return s + (Number(d.value) || 0); }, 0);
+  if (total === 0) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.lineWidth = thickness;
+    ctx.strokeStyle = '#ececec';
+    ctx.stroke();
+  } else {
+    var start = -Math.PI / 2;
+    data.forEach(function (seg) {
+      var v = Number(seg.value) || 0;
+      if (v <= 0) return;
+      var sweep = (v / total) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, start, start + sweep);
+      ctx.lineWidth = thickness;
+      ctx.strokeStyle = seg.color || '#ccc';
+      ctx.lineCap = 'butt';
+      ctx.stroke();
+      start += sweep;
+    });
+  }
+})();
+</script>

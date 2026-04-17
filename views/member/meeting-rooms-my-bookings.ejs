@@ -1,0 +1,56 @@
+<% if (typeof query !== 'undefined' && query.msg === 'booked') { %>
+  <div class="alert alert-success">Booking created. Complete payment within 2 hours to confirm your slot. <% if (query.ref) { %>Reference: <strong><%= query.ref %></strong>.<% } %></div>
+<% } %>
+<% if (typeof query !== 'undefined' && query.msg === 'cancelled') { %>
+  <div class="alert alert-success">Booking cancelled.</div>
+<% } %>
+<% if (typeof query !== 'undefined' && query.msg === 'credit') { %>
+  <div class="alert alert-success">Booking cancelled. A credit note was recorded for your account (refunds are processed offline).</div>
+<% } %>
+<% if (typeof query !== 'undefined' && query.err === '24h') { %>
+  <div class="alert alert-error">Confirmed bookings can only be cancelled more than 24 hours before the start time.</div>
+<% } %>
+<% if (typeof query !== 'undefined' && query.err === 'state') { %>
+  <div class="alert alert-error">This booking cannot be changed in its current state.</div>
+<% } %>
+
+<% if (!rows.length) { %>
+  <div class="card"><p class="page-lead" style="margin:0;">You have no room bookings yet. <a href="/meeting-rooms">Browse rooms</a>.</p></div>
+<% } else { %>
+  <div class="card">
+    <table style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left;padding:8px;">Room</th>
+          <th style="text-align:left;padding:8px;">When</th>
+          <th style="text-align:left;padding:8px;">Status</th>
+          <th style="text-align:right;padding:8px;">Total</th>
+          <th style="text-align:left;padding:8px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% rows.forEach(function (r) { %>
+          <tr>
+            <td style="padding:8px;vertical-align:top;"><%= r.room_name %></td>
+            <td style="padding:8px;vertical-align:top;"><%= formatDateTime(r.starts_at) %> — <%= formatDateTime(r.ends_at) %></td>
+            <td style="padding:8px;vertical-align:top;"><%= r.status %></td>
+            <td style="padding:8px;vertical-align:top;text-align:right;"><%= formatNgn(r.total_cents) %></td>
+            <td style="padding:8px;vertical-align:top;">
+              <a href="/meeting-rooms/bookings/<%= r.id %>/confirmation">Print</a>
+              <% if (r.status === 'pending_payment' && r.invoice_id) { %>
+                · <a href="/billing">Pay</a>
+              <% } %>
+              <% if (r.status === 'pending_payment' || r.status === 'confirmed') { %>
+                <form method="post" action="/meeting-rooms/bookings/<%= r.id %>/cancel" style="display:inline;margin-left:8px;" onsubmit="return confirm('Cancel this booking?');">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                  <button type="submit" class="btn" style="padding:4px 10px;font-size:13px;">Cancel</button>
+                </form>
+              <% } %>
+            </td>
+          </tr>
+        <% }); %>
+      </tbody>
+    </table>
+  </div>
+<% } %>
+<p style="margin-top:16px;"><a href="/meeting-rooms">Book a room</a> · <a href="/dashboard">Dashboard</a></p>

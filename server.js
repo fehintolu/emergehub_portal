@@ -1,4 +1,5 @@
 require('dotenv').config();
+const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const expressLayouts = require('express-ejs-layouts');
@@ -13,13 +14,28 @@ const { loadAdmin } = require('./middleware/adminAuth');
 const paystackWebhook = require('./routes/paystackWebhook');
 const authRoutes = require('./routes/auth');
 const memberArea = require('./routes/memberArea');
+const memberMeetingRooms = require('./routes/memberMeetingRooms');
 const adminLogin = require('./routes/adminLogin');
 const adminMain = require('./routes/adminMain');
+const adminMeetingRooms = require('./routes/adminMeetingRooms');
 
 const app = express();
 if (process.env.TRUST_PROXY === '1') {
   app.set('trust proxy', 1);
 }
+
+function assetMtimeMs(relativePath) {
+  try {
+    return fs.statSync(path.join(__dirname, relativePath)).mtimeMs;
+  } catch {
+    return Date.now();
+  }
+}
+
+/** Bust browser/CDN caches when CSS changes (query string + weak validators). */
+app.locals.memberPortalCssV = String(
+  process.env.PORTAL_ASSET_VERSION || assetMtimeMs('public/css/member-portal.css')
+);
 
 app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'ejs');
@@ -36,7 +52,15 @@ app.use('/api/webhooks', paystackWebhook);
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(
+  express.static(path.join(__dirname, 'public'), {
+    setHeaders(res, filePath) {
+      if (filePath.endsWith('.css') || filePath.endsWith('.js')) {
+        res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+      }
+    },
+  })
+);
 
 const memberSessionSecret =
   process.env.MEMBER_SESSION_SECRET || process.env.SESSION_SECRET || 'dev-member';
@@ -106,10 +130,15 @@ app.get('/', (req, res) => {
 
 app.use('/auth', authRoutes);
 
-app.use(memberArea);
-
+/* Admin must be registered before memberArea: memberArea uses requireMember on all
+   its routes; mounting it first would run that middleware for /admin/* and redirect
+   guests to /auth/login. */
 app.use('/admin', adminLogin);
+app.use('/admin', adminMeetingRooms);
 app.use('/admin', adminMain);
+
+app.use(memberMeetingRooms);
+app.use(memberArea);
 
 app.use((req, res) => {
   res.status(404).send('Not found');
@@ -124,4 +153,10 @@ const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT) || 4601;
 app.listen(PORT, HOST, () => {
   console.log(`EmergeHub portal listening on http://${HOST}:${PORT}`);
+  try {
+    const { startPortalCron } = require('./lib/portalJobs');
+    startPortalCron();
+  } catch (e) {
+    console.error('portal cron init', e);
+  }
 });

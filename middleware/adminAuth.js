@@ -24,7 +24,7 @@ function requireAdmin(req, res, next) {
   }
   if (res.locals.currentAdmin.must_change_password) {
     const p = req.path || '';
-    if (p === '/admin/change-password' || p === '/admin/logout') return next();
+    if (p === '/change-password' || p === '/logout') return next();
     return res.redirect('/admin/change-password');
   }
   next();

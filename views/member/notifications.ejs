@@ -1,20 +1,25 @@
-<form method="post" action="/notifications/mark-all" style="margin-bottom:1rem;">
+<form method="post" action="/notifications/mark-all" style="margin-bottom:20px;">
   <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
   <button type="submit" class="btn btn-secondary">Mark all read</button>
 </form>
-<ul style="list-style:none;padding:0;">
-  <% rows.forEach(function (n) { %>
-    <li class="card" style="<%= n.read_at ? 'opacity:0.75' : '' %>">
-      <strong><%= n.title %></strong>
-      <p><%= n.message %></p>
-      <small><%= formatDateTime(n.created_at) %></small>
-      <% if (n.link_url) { %><p><a href="<%= n.link_url %>">Open</a></p><% } %>
-      <% if (!n.read_at) { %>
-        <form method="post" action="/notifications/<%= n.id %>/read">
-          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-          <button type="submit" class="link-btn">Mark read</button>
-        </form>
-      <% } %>
-    </li>
-  <% }); %>
-</ul>
+<% if (!rows.length) { %>
+  <div class="activity-card">
+    <div class="activity-empty">
+      <p>No notifications</p>
+    </div>
+  </div>
+<% } %>
+<% rows.forEach(function (n) { %>
+  <div class="card" style="<%= n.read_at ? 'opacity:0.85' : '' %>">
+    <strong><%= n.title %></strong>
+    <p style="margin:8px 0;color:var(--text-secondary);font-size:14px;"><%= n.message %></p>
+    <small style="color:var(--text-secondary);"><%= formatDateTime(n.created_at) %></small>
+    <% if (n.link_url) { %><p style="margin-top:10px;"><a href="<%= n.link_url %>" class="section-link">Open</a></p><% } %>
+    <% if (!n.read_at) { %>
+      <form method="post" action="/notifications/<%= n.id %>/read" style="margin-top:12px;">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+        <button type="submit" class="link-btn">Mark read</button>
+      </form>
+    <% } %>
+  </div>
+<% }); %>

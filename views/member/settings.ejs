@@ -5,6 +5,7 @@
   <a href="/settings/security" class="<%= tab === 'security' ? 'is-active' : '' %>">Security</a>
 </div>
 
+<div class="card">
 <% if (tab === 'profile') { %>
   <form method="post" action="/settings/profile" enctype="multipart/form-data">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
@@ -14,7 +15,7 @@
     <div class="form-row"><label>Profile photo (JPG/PNG)</label><input type="file" name="photo" accept=".jpg,.jpeg,.png" /></div>
     <button type="submit" class="btn btn-primary">Save</button>
   </form>
-  <p><small>Changing email will require re-verification.</small></p>
+  <p style="margin-top:16px;"><small style="color:var(--text-secondary);">Changing email will require re-verification.</small></p>
 <% } %>
 
 <% if (tab === 'business') { %>
@@ -32,12 +33,12 @@
 <% if (tab === 'notifications') { %>
   <form method="post" action="/settings/notifications">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-    <label><input type="checkbox" name="notify_email_invoice" value="1" <%= currentMember.notify_email_invoice ? 'checked' : '' %> /> Invoice emails</label><br/>
-    <label><input type="checkbox" name="notify_email_service" value="1" <%= currentMember.notify_email_service ? 'checked' : '' %> /> Service updates</label><br/>
-    <label><input type="checkbox" name="notify_email_support" value="1" <%= currentMember.notify_email_support ? 'checked' : '' %> /> Support replies</label><br/>
-    <label><input type="checkbox" name="notify_email_announcements" value="1" <%= currentMember.notify_email_announcements ? 'checked' : '' %> /> Announcements</label><br/>
-    <label><input type="checkbox" name="notify_sms" value="1" <%= currentMember.notify_sms ? 'checked' : '' %> /> SMS (if phone verified)</label><br/>
-    <button type="submit" class="btn btn-primary" style="margin-top:1rem;">Save</button>
+    <div class="form-row" style="margin-bottom:12px;"><label><input type="checkbox" name="notify_email_invoice" value="1" <%= currentMember.notify_email_invoice ? 'checked' : '' %> /> Invoice emails</label></div>
+    <div class="form-row" style="margin-bottom:12px;"><label><input type="checkbox" name="notify_email_service" value="1" <%= currentMember.notify_email_service ? 'checked' : '' %> /> Service updates</label></div>
+    <div class="form-row" style="margin-bottom:12px;"><label><input type="checkbox" name="notify_email_support" value="1" <%= currentMember.notify_email_support ? 'checked' : '' %> /> Support replies</label></div>
+    <div class="form-row" style="margin-bottom:12px;"><label><input type="checkbox" name="notify_email_announcements" value="1" <%= currentMember.notify_email_announcements ? 'checked' : '' %> /> Announcements</label></div>
+    <div class="form-row" style="margin-bottom:12px;"><label><input type="checkbox" name="notify_sms" value="1" <%= currentMember.notify_sms ? 'checked' : '' %> /> SMS (if phone verified)</label></div>
+    <button type="submit" class="btn btn-primary" style="margin-top:8px;">Save</button>
   </form>
 <% } %>
 
@@ -49,14 +50,18 @@
     <div class="form-row"><label>Confirm</label><input type="password" name="password2" minlength="8" required autocomplete="new-password" /></div>
     <button type="submit" class="btn btn-primary">Update password</button>
   </form>
-  <h3>Active sessions</h3>
-  <ul><% sessions.forEach(function (s) { %>
-    <li><%= s.ip_address %> · <%= formatDateTime(s.last_seen_at) %>
-      <form method="post" action="/settings/session-revoke" style="display:inline;">
-        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-        <input type="hidden" name="session_sid" value="<%= s.session_sid %>" />
-        <button type="submit" class="link-btn">Log out</button>
-      </form>
-    </li>
-  <% }); %></ul>
+  <h3 style="margin:28px 0 12px;">Active sessions</h3>
+  <ul class="plain-list">
+    <% sessions.forEach(function (s) { %>
+      <li>
+        <%= s.ip_address %> · <%= formatDateTime(s.last_seen_at) %>
+        <form method="post" action="/settings/session-revoke" style="display:inline;margin-left:8px;">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+          <input type="hidden" name="session_sid" value="<%= s.session_sid %>" />
+          <button type="submit" class="link-btn">Log out</button>
+        </form>
+      </li>
+    <% }); %>
+  </ul>
 <% } %>
+</div>

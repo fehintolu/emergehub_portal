@@ -1,0 +1,18 @@
+<% if (!rooms.length) { %>
+  <div class="card">
+    <p class="page-lead" style="margin:0;">No bookable meeting rooms are configured yet. Please check back soon or contact the hub team.</p>
+  </div>
+<% } else { %>
+  <div class="card-grid" style="display:grid;gap:16px;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));">
+    <% rooms.forEach(function (r) { %>
+      <div class="card">
+        <h3 style="margin:0 0 8px;"><%= r.name %></h3>
+        <% if (r.description) { %><p class="page-lead" style="margin:0 0 12px;"><%= r.description %></p><% } %>
+        <p style="margin:0 0 8px;font-size:14px;">Capacity: <strong><%= r.capacity %></strong></p>
+        <p style="margin:0 0 16px;font-size:15px;">From <strong><%= formatNgn(r.hourly_rate_cents) %></strong> / hour</p>
+        <a class="btn btn-primary" href="/meeting-rooms/<%= r.id %>">Book this room</a>
+      </div>
+    <% }); %>
+  </div>
+<% } %>
+<p style="margin-top:20px;"><a href="/meeting-rooms/my-bookings">My room bookings</a> · <a href="/dashboard">Dashboard</a></p>

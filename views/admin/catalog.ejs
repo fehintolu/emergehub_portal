@@ -1,0 +1,59 @@
+<% if (msg === 'saved') { %>
+  <div class="alert alert-success anim anim-2">Sort order saved.</div>
+<% } else if (msg === 'created') { %>
+  <div class="alert alert-success anim anim-2">Service created.</div>
+<% } else if (msg === 'updated') { %>
+  <div class="alert alert-success anim anim-2">Service updated.</div>
+<% } %>
+<% if (err === 'slug') { %>
+  <div class="alert alert-error anim anim-2">Could not save — slug may already exist for that category.</div>
+<% } %>
+
+<div class="card anim anim-2" style="margin-bottom:20px;">
+  <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;">
+    <p class="page-lead" style="margin:0;">Set sort order (lower numbers appear first within each category), then save.</p>
+    <a class="btn btn-primary" href="/admin/catalog/new">Add service</a>
+  </div>
+</div>
+
+<form method="post" action="/admin/catalog/sort" class="anim anim-3">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Service</th>
+          <th>Category</th>
+          <th>Portal</th>
+          <th>Mode</th>
+          <th>Price</th>
+          <th style="width:120px;">Sort</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% services.forEach(function (s) { %>
+          <tr>
+            <td><strong><%= s.name %></strong><% var _d = String(s.description || ''); if (_d) { %><br /><small style="color:var(--text-secondary);"><%= _d.slice(0, 80) %><%= _d.length > 80 ? '…' : '' %></small><% } %></td>
+            <td><%= s.category_name %></td>
+            <td>
+              <% if (s.portal_active === false) { %><span class="badge">Hidden</span><% } else { %><span class="badge" style="background:var(--green-light);color:var(--green);">Live</span><% } %>
+            </td>
+            <td><%= s.booking_mode === 'plan_booking' ? 'Bookable' : 'Request' %></td>
+            <td><%= formatNgn(s.portal_price_cents || 0) %></td>
+            <td><input type="number" min="0" step="1" name="sort_<%= s.id %>" value="<%= s.sort_order %>" style="width:100%;max-width:96px;padding:8px;border:1px solid var(--border);border-radius:8px;" /></td>
+            <td>
+              <a href="/admin/catalog/<%= s.id %>/edit" class="section-link">Edit</a>
+              · <a href="/admin/catalog/<%= s.id %>/plans" class="section-link">Plans</a>
+            </td>
+          </tr>
+        <% }); %>
+      </tbody>
+    </table>
+  </div>
+  <% if (!services.length) { %>
+    <p class="page-lead" style="padding:16px 0;">No services yet. Add one to show it in the member portal.</p>
+  <% } else { %>
+    <p style="margin-top:16px;"><button type="submit" class="btn btn-secondary">Save sort order</button></p>
+  <% } %>
+</form>

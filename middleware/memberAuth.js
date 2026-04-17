@@ -1,8 +1,11 @@
 const { pool } = require('../lib/db');
+const { memberInitials, todayLongEnGb } = require('../lib/memberUi');
 
 async function loadMember(req, res, next) {
+  res.locals.todaySubtitle = todayLongEnGb();
   if (!req.session.memberId) {
     res.locals.currentMember = null;
+    res.locals.memberInitials = '';
     return next();
   }
   const { rows } = await pool.query(
@@ -10,6 +13,9 @@ async function loadMember(req, res, next) {
     [req.session.memberId]
   );
   res.locals.currentMember = rows[0] || null;
+  res.locals.memberInitials = res.locals.currentMember
+    ? memberInitials(res.locals.currentMember.full_name)
+    : '';
   next();
 }
 

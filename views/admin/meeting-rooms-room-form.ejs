@@ -1,0 +1,90 @@
+<p class="page-lead"><a href="/admin/meeting-rooms/rooms">← Rooms</a></p>
+<% if (typeof query !== 'undefined' && query.msg === 'created') { %><div class="alert alert-success">Room created. Review weekly hours and blocks.</div><% } %>
+<% if (typeof query !== 'undefined' && query.msg === 'saved') { %><div class="alert alert-success">Saved.</div><% } %>
+<% if (typeof query !== 'undefined' && query.err === 'blocktime') { %><div class="alert alert-error">Invalid block times.</div><% } %>
+<% if (typeof query !== 'undefined' && query.msg === 'block') { %><div class="alert alert-success">Block added.</div><% } %>
+<% if (typeof query !== 'undefined' && query.msg === 'blockdel') { %><div class="alert alert-success">Block removed.</div><% } %>
+
+<div class="card" style="margin-bottom:16px;">
+  <h2 class="page-title" style="margin-top:0;"><%= room ? 'Edit room' : 'New room' %></h2>
+  <form method="post" action="<%= room ? '/admin/meeting-rooms/rooms/' + room.id + '/edit' : '/admin/meeting-rooms/rooms/new' %>">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+    <div class="form-row">
+      <label>Name</label>
+      <input name="name" required value="<%= room ? room.name : '' %>" />
+    </div>
+    <div class="form-row">
+      <label>Description</label>
+      <textarea name="description" rows="3"><%= room ? room.description : '' %></textarea>
+    </div>
+    <div class="form-row">
+      <label>Capacity</label>
+      <input type="number" name="capacity" min="1" value="<%= room ? room.capacity : 4 %>" />
+    </div>
+    <div class="form-row">
+      <label>Hourly rate (kobo / cents)</label>
+      <input type="number" name="hourly_rate_cents" min="0" step="1" value="<%= room ? room.hourly_rate_cents : 0 %>" />
+      <small>Example: 1500000 = ₦15,000/hr</small>
+    </div>
+    <div class="form-row">
+      <label>Sort order</label>
+      <input type="number" name="sort_order" value="<%= room ? room.sort_order : 0 %>" />
+    </div>
+    <div class="form-row">
+      <label><input type="checkbox" name="active" value="1" <%= (!room || room.active) ? 'checked' : '' %> /> Active</label>
+    </div>
+
+    <h3>Weekly schedule</h3>
+    <p class="page-lead" style="margin-top:0;">Saving replaces the current schedule rows for this room.</p>
+    <% for (var wd = 0; wd <= 6; wd++) {
+         var sch = (scheduleByWd && scheduleByWd[wd]) || {};
+         var defOpen = (wd >= 1 && wd <= 5);
+         var isOpen = sch.is_open !== undefined && sch.is_open !== null ? sch.is_open : defOpen;
+         var fr = sch.opens_at ? String(sch.opens_at).slice(0, 5) : '09:00';
+         var to = sch.closes_at ? String(sch.closes_at).slice(0, 5) : '18:00';
+    %>
+      <div class="form-row" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;border-bottom:1px solid rgba(0,0,0,0.06);padding:8px 0;">
+        <strong style="min-width:120px;"><%= WD[wd] %></strong>
+        <label><input type="checkbox" name="wd_<%= wd %>_open" value="1" <%= isOpen ? 'checked' : '' %> /> Open</label>
+        <label>From <input type="time" name="wd_<%= wd %>_from" value="<%= fr %>" /></label>
+        <label>To <input type="time" name="wd_<%= wd %>_to" value="<%= to %>" /></label>
+      </div>
+    <% } %>
+
+    <button type="submit" class="btn btn-primary" style="margin-top:16px;">Save</button>
+  </form>
+  <% if (room) { %>
+    <form method="post" action="/admin/meeting-rooms/rooms/<%= room.id %>/delete" style="margin-top:12px;" onsubmit="return confirm('Archive this room?');">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+      <button type="submit" class="btn btn-ghost">Archive room</button>
+    </form>
+  <% } %>
+</div>
+
+<% if (room) { %>
+  <div class="card" style="margin-bottom:16px;">
+    <h3 style="margin-top:0;">Blocked times</h3>
+    <form method="post" action="/admin/meeting-rooms/rooms/<%= room.id %>/blocks">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+      <div class="form-row"><label>Start</label><input type="datetime-local" name="starts_at" required /></div>
+      <div class="form-row"><label>End</label><input type="datetime-local" name="ends_at" required /></div>
+      <div class="form-row"><label>Reason (member-visible)</label><input name="reason" /></div>
+      <div class="form-row"><label>Internal note</label><input name="internal_note" /></div>
+      <button type="submit" class="btn btn-secondary">Add block</button>
+    </form>
+    <% if (typeof blocks !== 'undefined' && blocks.length) { %>
+      <ul style="margin-top:16px;padding-left:18px;">
+        <% blocks.forEach(function (b) { %>
+          <li>
+            <%= formatDateTime(b.starts_at) %> → <%= formatDateTime(b.ends_at) %>
+            <% if (b.reason) { %> — <%= b.reason %><% } %>
+            <form method="post" action="/admin/meeting-rooms/blocks/<%= b.id %>/delete" style="display:inline;margin-left:8px;" onsubmit="return confirm('Remove this block?');">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+              <button type="submit" class="btn" style="padding:2px 8px;font-size:12px;">Remove</button>
+            </form>
+          </li>
+        <% }); %>
+      </ul>
+    <% } %>
+  </div>
+<% } %>

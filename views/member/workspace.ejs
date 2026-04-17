@@ -4,75 +4,129 @@
 <% if (query && query.msg === 'booked') { %>
   <div class="alert alert-success">Room booking submitted for approval.</div>
 <% } %>
+<% if (query && query.err === 'business') { %>
+  <div class="alert alert-error">Add your business name under <a href="/settings/business" class="section-link">Settings → Business</a> before booking workspace access.</div>
+<% } %>
+<% if (query && query.err === 'book') { %>
+  <div class="alert alert-error">That booking could not be completed. Please try again or pick another plan.</div>
+<% } %>
+<% if (query && query.err === 'price') { %>
+  <div class="alert alert-error">This plan has no price yet — please contact EmergeHub or choose another option.</div>
+<% } %>
+
+<div class="card" style="margin-bottom:20px;border-left:4px solid var(--brand);">
+  <p style="margin:0;font-size:14px;line-height:1.5;"><strong>Paid meeting rooms</strong> — browse hub spaces, see discounts, and pay online to confirm your slot. <a href="/meeting-rooms" class="section-link">Book a meeting room</a> · <a href="/meeting-rooms/my-bookings" class="section-link">My room bookings</a></p>
+  <p class="page-lead" style="margin:8px 0 0;font-size:13px;">The simple room form below is the legacy request list (admin approval). Prefer the new flow when possible.</p>
+</div>
+
+<% if (bookableServices && bookableServices.length) { %>
+  <div class="section-header" style="margin-top:0;">
+    <span class="section-title">Core workspace access</span>
+  </div>
+  <p class="page-lead" style="margin-top:-6px;margin-bottom:16px;">Pick a service and plan — we create your request and invoice immediately. No long request form.</p>
+  <% bookableServices.forEach(function (svc) { %>
+    <% var plans = (plansByService && plansByService[svc.id]) ? plansByService[svc.id] : []; %>
+    <div class="card" style="margin-bottom:20px;">
+      <strong style="font-size:1.05rem;"><%= svc.name %></strong>
+      <span class="badge" style="margin-left:8px;"><%= svc.category_name %></span>
+      <p class="page-lead" style="margin:10px 0 14px;"><%= svc.description %></p>
+      <% if (!plans.length) { %>
+        <p class="page-lead" style="margin:0;color:var(--text-secondary);">Plans coming soon — check back shortly.</p>
+      <% } else { %>
+        <div style="display:grid;gap:12px;">
+          <% plans.forEach(function (p) { %>
+            <% var _dv = Number(p.duration_value); var _du = String(p.duration_unit || '').toLowerCase(); %>
+            <% var _durOk = _dv > 0 && ['hour','day','month'].includes(_du); %>
+            <% var _unitLbl = !_durOk ? '' : (_du === 'month' ? (_dv === 1 ? 'month' : 'months') : _du === 'day' ? (_dv === 1 ? 'day' : 'days') : (_dv === 1 ? 'hour' : 'hours')); %>
+            <div class="card" style="background:var(--surface-2);margin-bottom:0;">
+              <div style="display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px;">
+                <div>
+                  <strong><%= p.title %></strong>
+                  <% if (_durOk) { %>
+                    <span class="badge" style="margin-left:6px;"><%= _dv %> <%= _unitLbl %> access</span>
+                  <% } %>
+                  <p class="page-lead" style="margin:6px 0 0;font-size:14px;"><%= p.description %></p>
+                  <% if (_durOk) { %>
+                    <p class="page-lead" style="margin:8px 0 0;font-size:13px;color:var(--text-secondary);">Access period starts after your invoice is paid (unless EmergeHub schedules a different start).</p>
+                  <% } %>
+                </div>
+                <div style="text-align:right;">
+                  <p style="font-weight:700;margin:0 0 8px;"><%= formatNgn(p.price_cents) %></p>
+                  <form method="post" action="/workspace/book-service" style="display:inline;">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                    <input type="hidden" name="service_id" value="<%= svc.id %>" />
+                    <input type="hidden" name="plan_id" value="<%= p.id %>" />
+                    <button type="submit" class="btn btn-primary">Book &amp; invoice</button>
+                  </form>
+                </div>
+              </div>
+            </div>
+          <% }); %>
+        </div>
+      <% } %>
+    </div>
+  <% }); %>
+<% } %>
 
 <% if (plan) { %>
   <div class="card">
-    <h3 style="margin-top:0;">Current plan</h3>
-    <p><strong><%= plan.name %></strong> — <%= plan.status %></p>
-    <p><%= plan.description %></p>
-    <p>Price (display): <%= plan.price_display %> · <%= plan.hours %></p>
-    <p>Started: <%= formatDate(plan.started_at) %> · Renewal: <%= plan.renewal_at ? formatDate(plan.renewal_at) : '—' %></p>
-    <% if (plan.desk_or_office) { %><p>Assignment: <%= plan.desk_or_office %></p><% } %>
+    <h3>Current plan</h3>
+    <p><strong><%= plan.name %></strong> <span class="badge"><%= plan.status %></span></p>
+    <p class="page-lead" style="margin-bottom:0;"><%= plan.description %></p>
+    <p><strong>Price:</strong> <%= plan.price_display %> · <%= plan.hours %></p>
+    <p><strong>Started:</strong> <%= formatDate(plan.started_at) %> · <strong>Renewal:</strong> <%= plan.renewal_at ? formatDate(plan.renewal_at) : '—' %></p>
+    <% if (plan.desk_or_office) { %><p><strong>Assignment:</strong> <%= plan.desk_or_office %></p><% } %>
   </div>
-  <div class="card">
-    <h3>Meeting rooms</h3>
-    <h4>Upcoming</h4>
-    <% if (!bookingsUp.length) { %><p>None.</p><% } %>
-    <ul><% bookingsUp.forEach(function (b) { %>
-      <li><%= formatDateTime(b.starts_at) %> — <%= b.room_name %> (<%= b.status %>)</li>
-    <% }); %></ul>
-    <h4>Past</h4>
-    <ul><% bookingsPast.forEach(function (b) { %>
-      <li><%= formatDateTime(b.starts_at) %> — <%= b.room_name %></li>
-    <% }); %></ul>
-    <h4>Book a room</h4>
-    <form method="post" action="/workspace/book-room">
-      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-      <div class="form-row">
-        <label>Room</label>
-        <select name="room_name" required>
-          <% roomNames.forEach(function (r) { %><option value="<%= r %>"><%= r %></option><% }); %>
-        </select>
-      </div>
-      <div class="form-row">
-        <label>Start</label>
-        <input type="datetime-local" name="starts_at" required />
-      </div>
-      <div class="form-row">
-        <label>Duration (minutes)</label>
-        <input type="number" name="duration_minutes" value="60" min="30" step="30" />
-      </div>
-      <div class="form-row">
-        <label>Purpose</label>
-        <input type="text" name="purpose" />
-      </div>
-      <button type="submit" class="btn btn-primary">Submit booking</button>
-    </form>
-  </div>
-<% } else { %>
-  <div class="card">
-    <h3 style="margin-top:0;">No active plan</h3>
-    <p>Choose a membership tier to request:</p>
-    <% tiers.forEach(function (t) { %>
-      <div class="card" style="background:#fff;">
-        <strong><%= t.name %></strong>
-        <p><%= t.description %></p>
-        <p><%= t.price_display %></p>
-        <form method="post" action="/workspace/plan-request">
-          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-          <input type="hidden" name="tier_id" value="<%= t.id %>" />
-          <div class="form-row"><label>Note (optional)</label><input type="text" name="note" /></div>
-          <button type="submit" class="btn btn-primary">Request this plan</button>
-        </form>
-      </div>
-    <% }); %>
+
+  <div class="member-two-col" style="margin-bottom: 0;">
+    <div class="card" style="margin-bottom: 0;">
+      <h3>Upcoming room bookings</h3>
+      <% if (!bookingsUp.length) { %><p class="page-lead" style="margin:0;">None scheduled.</p><% } %>
+      <ul class="plain-list">
+        <% bookingsUp.forEach(function (b) { %>
+          <li><%= formatDateTime(b.starts_at) %> — <strong><%= b.room_name %></strong> <span class="badge"><%= b.status %></span></li>
+        <% }); %>
+      </ul>
+      <h3 style="margin-top:1.25rem;">Past bookings</h3>
+      <% if (!bookingsPast.length) { %><p class="page-lead" style="margin:0;">None yet.</p><% } %>
+      <ul class="plain-list">
+        <% bookingsPast.forEach(function (b) { %>
+          <li><%= formatDateTime(b.starts_at) %> — <%= b.room_name %></li>
+        <% }); %>
+      </ul>
+    </div>
+    <div class="card" style="margin-bottom: 0;">
+      <h3>Book a room</h3>
+      <form method="post" action="/workspace/book-room">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+        <div class="form-row">
+          <label>Room</label>
+          <select name="room_name" required>
+            <% roomNames.forEach(function (r) { %><option value="<%= r %>"><%= r %></option><% }); %>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Start</label>
+          <input type="datetime-local" name="starts_at" required />
+        </div>
+        <div class="form-row">
+          <label>Duration (minutes)</label>
+          <input type="number" name="duration_minutes" value="60" min="30" step="30" />
+        </div>
+        <div class="form-row">
+          <label>Purpose</label>
+          <input type="text" name="purpose" />
+        </div>
+        <button type="submit" class="btn btn-primary">Submit booking</button>
+      </form>
+    </div>
   </div>
 <% } %>
 
 <% if (plan) { %>
 <div class="card">
   <h3>Change plan</h3>
-  <p>To upgrade or change plan, pick a tier and we will contact you.</p>
+  <p class="page-lead">To upgrade or change plan, pick a tier and we will contact you.</p>
   <form method="post" action="/workspace/plan-request">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
     <div class="form-row">

@@ -2,40 +2,34 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title><%= title %> — Member Portal</title>
-  <link rel="stylesheet" href="/css/portal.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title><%= title %> — EmergeHub Portal</title>
+  <link rel="stylesheet" href="/css/member-portal.css?v=<%= memberPortalCssV %>" />
 </head>
-<body class="portal-body">
-  <div class="portal-shell">
-    <aside class="portal-sidebar">
-      <div class="portal-brand">EmergeHub <span>Portal</span></div>
-      <nav>
-        <a href="/dashboard" class="<%= title === 'Dashboard' ? 'is-active' : '' %>">Dashboard</a>
-        <a href="/workspace" class="<%= title === 'My workspace' ? 'is-active' : '' %>">My Workspace</a>
-        <a href="/services" class="<%= title === 'Services' || (typeof title === 'string' && title.indexOf('Request') === 0) ? 'is-active' : '' %>">Services</a>
-        <a href="/billing" class="<%= title === 'Payments & billing' ? 'is-active' : '' %>">Payments</a>
-        <a href="/documents" class="<%= title === 'Documents' ? 'is-active' : '' %>">Documents</a>
-        <a href="/support" class="<%= title === 'Support' || title === 'New ticket' ? 'is-active' : '' %>">Support</a>
-        <a href="/settings/profile" class="<%= title === 'Settings' ? 'is-active' : '' %>">Settings</a>
-      </nav>
-      <form method="post" action="/auth/logout" style="margin-top:1.5rem;padding:0 1.25rem;">
-        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-        <button type="submit" class="link-btn" style="color:#fff;">Log out</button>
-      </form>
-    </aside>
-    <div class="portal-main">
-      <header class="portal-topbar">
-        <h1 style="margin:0;font-size:1.25rem;"><%= title %></h1>
-        <div style="display:flex;align-items:center;gap:1rem;">
-          <a href="/notifications" class="notif-bell" title="Notifications">&#128276;
-            <% if (typeof notifCount === 'number' && notifCount > 0) { %>
-              <span class="count"><%= notifCount > 9 ? '9+' : notifCount %></span>
-            <% } %>
-          </a>
-        </div>
-      </header>
-      <main class="portal-content"><%- body %></main>
+<body>
+  <%- include('../partials/member-sidebar') %>
+
+  <div class="main">
+    <header class="page-header anim anim-1">
+      <div>
+        <div class="page-title"><%= title %></div>
+        <div class="page-sub"><%= typeof pageSub === 'string' && pageSub ? pageSub : (typeof todaySubtitle !== 'undefined' ? todaySubtitle : '') %></div>
+      </div>
+      <div class="header-toolbar">
+        <a class="icon-btn" href="/services?tab=request" title="Browse services" aria-label="Browse services">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </a>
+        <a class="icon-btn" href="/notifications" title="Notifications" aria-label="Notifications">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+          <% if (typeof notifCount === 'number' && notifCount > 0) { %>
+            <span class="notif-dot" aria-hidden="true"></span>
+          <% } %>
+        </a>
+      </div>
+    </header>
+
+    <div class="member-body">
+      <%- body %>
     </div>
   </div>
 </body>

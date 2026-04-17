@@ -1,18 +1,37 @@
 <% if (typeof query !== 'undefined' && query.msg === 'ok') { %>
   <div class="alert alert-success">File uploaded.</div>
 <% } %>
-<h2>Shared with me</h2>
-<% if (!shared.length) { %><p>No documents yet.</p><% } %>
-<ul><% shared.forEach(function (d) { %>
-  <li><a href="/documents/download/<%= d.id %>"><%= d.original_name %></a> · <%= formatDateTime(d.created_at) %> · <%= d.mime_type %></li>
-<% }); %></ul>
 
-<h2>My uploads</h2>
-<form method="post" action="/documents/upload" enctype="multipart/form-data" class="card">
-  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-  <input type="file" name="file" required accept=".pdf,.jpg,.jpeg,.png,.docx" />
-  <button type="submit" class="btn btn-primary">Upload</button>
-</form>
-<ul><% mine.forEach(function (d) { %>
-  <li><a href="/documents/download/<%= d.id %>"><%= d.original_name %></a> · <%= formatDateTime(d.created_at) %></li>
-<% }); %></ul>
+<div class="section-header" style="margin-top:0;">
+  <span class="section-title">Shared with me</span>
+</div>
+<% if (!shared.length) { %>
+  <p class="page-lead">No documents yet.</p>
+<% } else { %>
+  <ul class="plain-list" style="margin-bottom:28px;">
+    <% shared.forEach(function (d) { %>
+      <li><a href="/documents/download/<%= d.id %>"><%= d.original_name %></a> · <%= formatDateTime(d.created_at) %> · <%= d.mime_type %></li>
+    <% }); %>
+  </ul>
+<% } %>
+
+<div class="section-header">
+  <span class="section-title">My uploads</span>
+</div>
+<div class="card">
+  <form method="post" action="/documents/upload" enctype="multipart/form-data">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+    <div class="form-row">
+      <label>File</label>
+      <input type="file" name="file" required accept=".pdf,.jpg,.jpeg,.png,.docx" />
+    </div>
+    <button type="submit" class="btn btn-primary">Upload</button>
+  </form>
+</div>
+<% if (mine.length) { %>
+  <ul class="plain-list">
+    <% mine.forEach(function (d) { %>
+      <li><a href="/documents/download/<%= d.id %>"><%= d.original_name %></a> · <%= formatDateTime(d.created_at) %></li>
+    <% }); %>
+  </ul>
+<% } %>

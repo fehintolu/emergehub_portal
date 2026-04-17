@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const { pool } = require('../lib/db');
 const { requireValidCsrf } = require('../lib/csrf');
 const { requireMember, requireVerifiedEmail } = require('../middleware/memberAuth');
+const { memberLayoutLocals } = require('../middleware/memberLayoutLocals');
 const { trackMemberSession } = require('../middleware/trackMemberSession');
 const { dashboardStats } = require('../lib/memberStats');
 const { recentActivityForMember } = require('../lib/activity');
@@ -23,9 +24,18 @@ const {
 } = require('../lib/notifications');
 const { logActivity } = require('../lib/activity');
 const { getSetting } = require('../lib/portalSettings');
+const {
+  createServiceRequestInvoiceInTx,
+  sendServiceRequestInvoiceNotifications,
+} = require('../lib/serviceRequestInvoice');
 
 const router = express.Router();
-router.use(requireMember, requireVerifiedEmail, trackMemberSession);
+router.use(
+  requireMember,
+  requireVerifiedEmail,
+  memberLayoutLocals,
+  trackMemberSession
+);
 
 const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, '../data/uploads');
 const maxMb = Number(process.env.MAX_UPLOAD_MB) || 10;
@@ -50,13 +60,28 @@ router.get('/dashboard', async (req, res) => {
   );
   const showOnboarding =
     !stats.hasActivePlan && svcHistory.rows[0].c === 0;
+  const announcements = await pool.query(
+    `SELECT title, message, created_at FROM member_notifications
+     WHERE member_id = $1 AND deleted_at IS NULL
+     ORDER BY created_at DESC LIMIT 5`,
+    [m.id]
+  );
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const fmtShort = (d) =>
+    d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   res.render('member/dashboard', {
     layout: 'layouts/member',
     title: 'Dashboard',
+    pageSub: 'Your membership overview',
     stats,
     activity,
     notifCount,
     showOnboarding,
+    announcements: announcements.rows,
+    filterMonthStart: fmtShort(monthStart),
+    filterMonthEnd: fmtShort(monthEnd),
     formatDateTime,
     formatNgn,
   });
@@ -72,9 +97,10 @@ router.get('/workspace', async (req, res) => {
      ORDER BY mp.started_at DESC LIMIT 1`,
     [m.id]
   );
-  const tiers = await pool.query(
-    `SELECT * FROM membership_tiers ORDER BY sort_order ASC`
-  );
+  let tiers = { rows: [] };
+  if (plan.rows[0]) {
+    tiers = await pool.query(`SELECT * FROM membership_tiers ORDER BY sort_order ASC`);
+  }
   const roomsJson = await getSetting('meeting_room_names', '[]');
   let roomNames = [];
   try {
@@ -94,17 +120,42 @@ router.get('/workspace', async (req, res) => {
      ORDER BY starts_at DESC LIMIT 30`,
     [m.id]
   );
+  const bookableSvcs = await pool.query(
+    `SELECT s.*, c.name AS category_name
+     FROM services s
+     JOIN service_categories c ON c.id = s.category_id
+     WHERE s.portal_active = true AND s.booking_mode = 'plan_booking'
+     ORDER BY c.sort_order, s.sort_order, s.id`
+  );
+  const svcIds = bookableSvcs.rows.map((r) => r.id);
+  let plansByService = {};
+  if (svcIds.length) {
+    const pl = await pool.query(
+      `SELECT * FROM service_plans
+       WHERE service_id = ANY($1::int[]) AND deleted_at IS NULL AND active = true
+       ORDER BY sort_order, id`,
+      [svcIds]
+    );
+    plansByService = pl.rows.reduce((acc, p) => {
+      if (!acc[p.service_id]) acc[p.service_id] = [];
+      acc[p.service_id].push(p);
+      return acc;
+    }, {});
+  }
   const notifCount = await unreadCount(m.id);
   res.render('member/workspace', {
     layout: 'layouts/member',
-    title: 'My workspace',
+    title: 'My Workspace',
     plan: plan.rows[0] || null,
     tiers: tiers.rows,
     roomNames,
     bookingsUp: bookingsUp.rows,
     bookingsPast: bookingsPast.rows,
+    bookableServices: bookableSvcs.rows,
+    plansByService,
     formatDate,
     formatDateTime,
+    formatNgn,
     notifCount,
     query: req.query,
   });
@@ -148,6 +199,111 @@ router.post('/workspace/book-room', requireValidCsrf, async (req, res) => {
   res.redirect('/workspace?msg=booked');
 });
 
+router.post('/workspace/book-service', requireValidCsrf, async (req, res) => {
+  const m = res.locals.currentMember;
+  if (!m.business_name) {
+    return res.redirect('/workspace?err=business');
+  }
+  const serviceId = Number(req.body.service_id);
+  const planId = String(req.body.plan_id || '').trim();
+  if (!serviceId || !planId) {
+    return res.redirect('/workspace?err=book');
+  }
+  const { rows: chk } = await pool.query(
+    `SELECT s.id, s.name, s.booking_mode, s.portal_active
+     FROM services s WHERE s.id = $1`,
+    [serviceId]
+  );
+  if (!chk[0] || !chk[0].portal_active || chk[0].booking_mode !== 'plan_booking') {
+    return res.redirect('/workspace?err=book');
+  }
+  const { rows: pl } = await pool.query(
+    `SELECT * FROM service_plans
+     WHERE id = $1::uuid AND service_id = $2 AND deleted_at IS NULL AND active = true`,
+    [planId, serviceId]
+  );
+  if (!pl[0]) return res.redirect('/workspace?err=book');
+  const plan = pl[0];
+  const priceCents = Number(plan.price_cents || 0);
+  if (priceCents <= 0) return res.redirect('/workspace?err=price');
+
+  const serviceName = chk[0].name || 'Workspace';
+  const title = `${serviceName} — ${plan.title}`;
+  const description = `Workspace booking: ${serviceName}. Plan: ${plan.title}. ${String(plan.description || '').trim()}`.slice(
+    0,
+    4000
+  );
+  const detail = {
+    workspace_booking: true,
+    plan_id: plan.id,
+    plan_title: plan.title,
+  };
+
+  const dueDays = Number((await getSetting('default_invoice_due_days', '7')) || 7) || 7;
+  const due = new Date();
+  due.setDate(due.getDate() + dueDays);
+  const dueStr = due.toISOString().slice(0, 10);
+  const invNo = await nextInvoiceNumber();
+
+  const client = await pool.connect();
+  let rid;
+  let invSummary = null;
+  try {
+    await client.query('BEGIN');
+    const insR = await client.query(
+      `INSERT INTO service_requests (member_id, service_id, service_plan_id, title, description, detail_json, status)
+       VALUES ($1, $2, $3::uuid, $4, $5, $6::jsonb, 'Submitted')
+       RETURNING id`,
+      [m.id, serviceId, plan.id, title, description, JSON.stringify(detail)]
+    );
+    rid = insR.rows[0].id;
+    await client.query(
+      `INSERT INTO service_request_updates (service_request_id, stage, note, visible_to_member)
+       VALUES ($1, 'Booked', 'Your workspace booking is recorded. Complete payment using the invoice below.', true)`,
+      [rid]
+    );
+    invSummary = await createServiceRequestInvoiceInTx(client, {
+      memberId: m.id,
+      serviceRequestId: rid,
+      serviceName,
+      priceCents,
+      invoiceNumber: invNo,
+      dueDateStr: dueStr,
+      lineDescription: `${serviceName} — ${plan.title}`,
+    });
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(e);
+    return res.redirect('/workspace?err=book');
+  } finally {
+    client.release();
+  }
+
+  await logActivity({
+    memberId: m.id,
+    eventType: 'service',
+    title: 'Workspace booking',
+    body: title,
+    entityType: 'service_request',
+    entityId: rid,
+  });
+  if (invSummary && invSummary.amount) {
+    await sendServiceRequestInvoiceNotifications({
+      memberId: m.id,
+      memberEmail: m.email,
+      memberName: m.full_name,
+      notifyInvoiceEmail: m.notify_email_invoice,
+      invoiceNumber: invSummary.number,
+      amountCents: invSummary.amount,
+      invId: invSummary.id,
+      dueDateStr: dueStr,
+      serviceRequestId: rid,
+    });
+  }
+  res.redirect(`/services/${rid}`);
+});
+
 router.get('/services', async (req, res) => {
   const m = res.locals.currentMember;
   const tab = req.query.tab === 'request' ? 'request' : 'mine';
@@ -158,6 +314,7 @@ router.get('/services', async (req, res) => {
     `SELECT s.*, c.name AS category_name, c.slug AS category_slug
      FROM services s
      JOIN service_categories c ON c.id = s.category_id
+     WHERE s.portal_active = true
      ORDER BY c.sort_order, s.sort_order`
   );
   const mine = await pool.query(
@@ -178,6 +335,7 @@ router.get('/services', async (req, res) => {
     services: services.rows,
     mine: mine.rows,
     formatDateTime,
+    formatNgn,
     notifCount,
   });
 });
@@ -187,10 +345,14 @@ router.get('/services/request/:serviceId', async (req, res) => {
   const sid = Number(req.params.serviceId);
   const { rows } = await pool.query(
     `SELECT s.*, c.name AS category_name FROM services s
-     JOIN service_categories c ON c.id = s.category_id WHERE s.id = $1`,
+     JOIN service_categories c ON c.id = s.category_id
+     WHERE s.id = $1 AND s.portal_active = true`,
     [sid]
   );
   if (!rows[0]) return res.status(404).send('Not found');
+  if (rows[0].booking_mode === 'plan_booking') {
+    return res.redirect('/workspace?err=book');
+  }
   if (!m.business_name) {
     return res.render('member/service-request-blocked', {
       layout: 'layouts/member',
@@ -205,6 +367,7 @@ router.get('/services/request/:serviceId', async (req, res) => {
     service: rows[0],
     notifCount: await unreadCount(m.id),
     query: req.query,
+    formatNgn,
   });
 });
 
@@ -217,7 +380,21 @@ router.post(
     const sid = Number(req.params.serviceId);
     const description = String(req.body.description || '').trim();
     if (!description) return res.redirect(`/services/request/${sid}?err=1`);
-    let docId = null;
+
+    const { rows: sv } = await pool.query(
+      `SELECT name, COALESCE(portal_price_cents, 0)::bigint AS portal_price_cents,
+        COALESCE(portal_active, true) AS portal_active,
+        COALESCE(booking_mode, 'request') AS booking_mode
+       FROM services WHERE id = $1`,
+      [sid]
+    );
+    if (!sv[0] || !sv[0].portal_active || sv[0].booking_mode === 'plan_booking') {
+      return res.redirect(`/services/request/${sid}?err=1`);
+    }
+    const serviceName = sv[0].name || 'Service';
+    const priceCents = Number(sv[0].portal_price_cents || 0);
+
+    let fileMeta = null;
     if (req.file && req.file.buffer) {
       const v = validateUploadedFile({
         buffer: req.file.buffer,
@@ -231,59 +408,101 @@ router.post(
       const fname = `${crypto.randomUUID()}${ext}`;
       const storagePath = path.join(memberDir, fname);
       await fs.writeFile(storagePath, req.file.buffer);
-      const ins = await pool.query(
-        `INSERT INTO member_documents (member_id, uploaded_by_type, uploaded_by_member_id, original_name, storage_path, mime_type, size_bytes, category)
-         VALUES ($1, 'member', $1, $2, $3, $4, $5, 'service_request')
-         RETURNING id`,
-        [
-          m.id,
-          req.file.originalname || 'file',
-          storagePath,
-          v.mime,
-          req.file.size,
-        ]
-      );
-      docId = ins.rows[0].id;
+      fileMeta = {
+        original: req.file.originalname || 'file',
+        storagePath,
+        mime: v.mime,
+        size: req.file.size,
+      };
     }
+
     const detail = {
       extra: String(req.body.extra_details || '').trim(),
     };
-    const { rows: sv } = await pool.query(
-      'SELECT name FROM services WHERE id = $1',
-      [sid]
-    );
-    const insR = await pool.query(
-      `INSERT INTO service_requests (member_id, service_id, title, description, detail_json, status)
-       VALUES ($1, $2, $3, $4, $5::jsonb, 'Submitted')
-       RETURNING id`,
-      [
-        m.id,
-        sid,
-        sv[0]?.name || 'Service',
-        description,
-        JSON.stringify(detail),
-      ]
-    );
-    const rid = insR.rows[0].id;
-    if (docId) {
-      await pool.query(
-        `UPDATE member_documents SET service_request_id = $2 WHERE id = $1`,
-        [docId, rid]
-      );
+
+    const dueDays = Number((await getSetting('default_invoice_due_days', '7')) || 7) || 7;
+    const due = new Date();
+    due.setDate(due.getDate() + dueDays);
+    const dueStr = due.toISOString().slice(0, 10);
+
+    let invNo = null;
+    if (priceCents > 0) {
+      invNo = await nextInvoiceNumber();
     }
-    await pool.query(
-      `INSERT INTO service_request_updates (service_request_id, stage, note, visible_to_member)
-       VALUES ($1, 'Submitted', 'Request received.', true)`,
-      [rid]
-    );
+
+    const client = await pool.connect();
+    let rid;
+    let invSummary = null;
+    try {
+      await client.query('BEGIN');
+      let docId = null;
+      if (fileMeta) {
+        const insDoc = await client.query(
+          `INSERT INTO member_documents (member_id, uploaded_by_type, uploaded_by_member_id, original_name, storage_path, mime_type, size_bytes, category)
+           VALUES ($1, 'member', $1, $2, $3, $4, $5, 'service_request')
+           RETURNING id`,
+          [m.id, fileMeta.original, fileMeta.storagePath, fileMeta.mime, fileMeta.size]
+        );
+        docId = insDoc.rows[0].id;
+      }
+      const insR = await client.query(
+        `INSERT INTO service_requests (member_id, service_id, title, description, detail_json, status)
+         VALUES ($1, $2, $3, $4, $5::jsonb, 'Submitted')
+         RETURNING id`,
+        [m.id, sid, serviceName, description, JSON.stringify(detail)]
+      );
+      rid = insR.rows[0].id;
+      if (docId) {
+        await client.query(
+          `UPDATE member_documents SET service_request_id = $2 WHERE id = $1`,
+          [docId, rid]
+        );
+      }
+      await client.query(
+        `INSERT INTO service_request_updates (service_request_id, stage, note, visible_to_member)
+         VALUES ($1, 'Submitted', 'Request received.', true)`,
+        [rid]
+      );
+      if (priceCents > 0 && invNo) {
+        invSummary = await createServiceRequestInvoiceInTx(client, {
+          memberId: m.id,
+          serviceRequestId: rid,
+          serviceName,
+          priceCents,
+          invoiceNumber: invNo,
+          dueDateStr: dueStr,
+        });
+      }
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      console.error(e);
+      return res.redirect(`/services/request/${sid}?err=1`);
+    } finally {
+      client.release();
+    }
+
     await logActivity({
       memberId: m.id,
       eventType: 'service',
       title: 'Service request submitted',
-      body: sv[0]?.name,
+      body: serviceName,
       entityType: 'service_request',
       entityId: rid,
     });
+    if (invSummary && invSummary.amount) {
+      await sendServiceRequestInvoiceNotifications({
+        memberId: m.id,
+        memberEmail: m.email,
+        memberName: m.full_name,
+        notifyInvoiceEmail: m.notify_email_invoice,
+        invoiceNumber: invSummary.number,
+        amountCents: invSummary.amount,
+        invId: invSummary.id,
+        dueDateStr: dueStr,
+        serviceRequestId: rid,
+      });
+    }
     res.redirect(`/services/${rid}`);
   }
 );
@@ -301,6 +520,46 @@ router.get('/services/:id', async (req, res) => {
   );
   if (!rows[0]) return res.status(404).send('Not found');
   const sr = rows[0];
+  const invIdSet = new Set();
+  if (sr.invoice_id) invIdSet.add(sr.invoice_id);
+  const linkedInv = await pool.query(
+    `SELECT id FROM invoices WHERE service_request_id = $1::uuid AND member_id = $2 AND deleted_at IS NULL`,
+    [id, m.id]
+  );
+  linkedInv.rows.forEach((r) => invIdSet.add(r.id));
+  const linkInv = await pool.query(
+    `SELECT invoice_id FROM invoice_service_links WHERE service_request_id = $1::uuid AND deleted_at IS NULL`,
+    [id]
+  );
+  linkInv.rows.forEach((r) => invIdSet.add(r.invoice_id));
+  const invoicesWithItems = [];
+  for (const invId of invIdSet) {
+    const invq = await pool.query(
+      `SELECT * FROM invoices WHERE id = $1 AND member_id = $2 AND deleted_at IS NULL`,
+      [invId, m.id]
+    );
+    const inv = invq.rows[0];
+    if (!inv) continue;
+    const it = await pool.query(
+      `SELECT * FROM invoice_items WHERE invoice_id = $1 AND deleted_at IS NULL ORDER BY sort_order, id`,
+      [inv.id]
+    );
+    invoicesWithItems.push({ invoice: inv, items: it.rows });
+  }
+  invoicesWithItems.sort(
+    (a, b) => new Date(a.invoice.created_at).getTime() - new Date(b.invoice.created_at).getTime()
+  );
+  let bookingPlan = null;
+  if (sr.service_plan_id) {
+    const pq = await pool.query(
+      `SELECT * FROM service_plans WHERE id = $1::uuid AND deleted_at IS NULL`,
+      [sr.service_plan_id]
+    );
+    bookingPlan = pq.rows[0] || null;
+  }
+  const bankName = await getSetting('bank_name');
+  const accountName = await getSetting('account_name');
+  const accountNumber = await getSetting('account_number');
   const updates = await pool.query(
     `SELECT * FROM service_request_updates
      WHERE service_request_id = $1 AND deleted_at IS NULL AND visible_to_member = true
@@ -323,10 +582,17 @@ router.get('/services/:id', async (req, res) => {
     layout: 'layouts/member',
     title: sr.service_name,
     sr,
+    bookingPlan,
     updates: updates.rows,
     msgs: msgs.rows,
     docs: docs.rows,
+    invoicesWithItems,
+    bankName,
+    accountName,
+    accountNumber,
     formatDateTime,
+    formatNgn,
+    formatDate,
     notifCount,
   });
 });
@@ -362,6 +628,36 @@ router.get('/billing', async (req, res) => {
      ORDER BY due_date ASC`,
     [m.id]
   );
+  const invExtras = {};
+  if (outstanding.rows.length) {
+    const ids = outstanding.rows.map((r) => r.id);
+    const { rows: linkRows } = await pool.query(
+      `SELECT isl.*, sr.title AS sr_title, sv.name AS service_name
+       FROM invoice_service_links isl
+       JOIN service_requests sr ON sr.id = isl.service_request_id
+       JOIN services sv ON sv.id = sr.service_id
+       WHERE isl.invoice_id = ANY($1::uuid[]) AND isl.deleted_at IS NULL`,
+      [ids]
+    );
+    const { rows: rbRows } = await pool.query(
+      `SELECT rb.*, mr.name AS room_name
+       FROM room_bookings rb
+       JOIN meeting_rooms mr ON mr.id = rb.meeting_room_id
+       WHERE rb.invoice_id = ANY($1::uuid[]) AND rb.deleted_at IS NULL`,
+      [ids]
+    );
+    ids.forEach((iid) => {
+      invExtras[iid] = { links: [], room: null };
+    });
+    linkRows.forEach((l) => {
+      if (!invExtras[l.invoice_id]) invExtras[l.invoice_id] = { links: [], room: null };
+      invExtras[l.invoice_id].links.push(l);
+    });
+    rbRows.forEach((b) => {
+      if (!invExtras[b.invoice_id]) invExtras[b.invoice_id] = { links: [], room: null };
+      invExtras[b.invoice_id].room = b;
+    });
+  }
   const history = await pool.query(
     `SELECT p.*, i.invoice_number, i.notes
      FROM payments p
@@ -376,8 +672,9 @@ router.get('/billing', async (req, res) => {
   const notifCount = await unreadCount(m.id);
   res.render('member/billing', {
     layout: 'layouts/member',
-    title: 'Payments & billing',
+    title: 'Payments',
     outstanding: outstanding.rows,
+    invExtras,
     history: history.rows,
     formatNgn,
     formatDate,
@@ -478,6 +775,50 @@ router.post('/billing/manual', upload.single('proof'), requireValidCsrf, async (
     linkUrl: '/billing',
   });
   res.redirect('/billing?msg=manual');
+});
+
+router.get('/billing/invoices/:invoiceId/print', async (req, res) => {
+  const m = res.locals.currentMember;
+  const invoiceId = req.params.invoiceId;
+  const { rows } = await pool.query(
+    `SELECT i.*, m.full_name, m.email
+     FROM invoices i
+     JOIN members m ON m.id = i.member_id
+     WHERE i.id = $1::uuid AND i.member_id = $2 AND i.deleted_at IS NULL`,
+    [invoiceId, m.id]
+  );
+  if (!rows[0]) return res.status(404).send('Not found');
+  const inv = rows[0];
+  const items = await pool.query(
+    `SELECT * FROM invoice_items WHERE invoice_id = $1::uuid AND deleted_at IS NULL ORDER BY sort_order, id`,
+    [invoiceId]
+  );
+  const { rows: invoiceLinks } = await pool.query(
+    `SELECT isl.*, sr.title AS sr_title, sv.name AS service_name
+     FROM invoice_service_links isl
+     JOIN service_requests sr ON sr.id = isl.service_request_id
+     JOIN services sv ON sv.id = sr.service_id
+     WHERE isl.invoice_id = $1::uuid AND isl.deleted_at IS NULL`,
+    [invoiceId]
+  );
+  const { rows: rbRows } = await pool.query(
+    `SELECT rb.*, mr.name AS room_name
+     FROM room_bookings rb
+     JOIN meeting_rooms mr ON mr.id = rb.meeting_room_id
+     WHERE rb.invoice_id = $1::uuid AND rb.deleted_at IS NULL`,
+    [invoiceId]
+  );
+  res.render('member/invoice-print', {
+    layout: false,
+    inv,
+    items: items.rows,
+    invoiceLinks: invoiceLinks.rows,
+    roomBooking: rbRows[0] || null,
+    formatNgn,
+    formatDate,
+    formatDateTime,
+    memberPortalCssV: res.app.locals.memberPortalCssV,
+  });
 });
 
 router.get('/billing/receipt/:paymentId', async (req, res) => {

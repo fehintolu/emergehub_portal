@@ -1,0 +1,20 @@
+<div class="card print-area">
+  <h1 class="page-title" style="margin-top:0;">Meeting room booking</h1>
+  <p style="font-size:18px;margin:0 0 16px;"><strong><%= b.room_name %></strong></p>
+  <p style="margin:4px 0;"><strong>Reference:</strong> <%= b.booking_reference %></p>
+  <p style="margin:4px 0;"><strong>Status:</strong> <%= b.status %></p>
+  <p style="margin:4px 0;"><strong>Start:</strong> <%= formatDateTime(b.starts_at) %></p>
+  <p style="margin:4px 0;"><strong>End:</strong> <%= formatDateTime(b.ends_at) %></p>
+  <% if (b.purpose) { %><p style="margin:4px 0;"><strong>Purpose:</strong> <%= b.purpose %></p><% } %>
+  <p style="margin:4px 0;"><strong>Total:</strong> <%= formatNgn(b.total_cents) %></p>
+  <% if (b.room_description) { %><p class="page-lead" style="margin-top:16px;"><%= b.room_description %></p><% } %>
+</div>
+<p class="no-print" style="margin-top:16px;">
+  <button type="button" class="btn btn-primary" onclick="window.print()">Print</button>
+  <a class="btn" href="/meeting-rooms/my-bookings">Back to my bookings</a>
+</p>
+<style media="print">
+  .no-print, .page-header, .sidebar { display: none !important; }
+  .main { margin: 0 !important; }
+  .print-area { box-shadow: none !important; border: none !important; }
+</style>

@@ -1,6 +1,27 @@
 <h2><%= inv.invoice_number %></h2>
 <p><%= inv.full_name %> · <%= inv.email %></p>
 <p>Status: <span class="badge"><%= inv.status %></span> · Due <%= formatDate(inv.due_date) %></p>
+<% if (typeof invoiceLinks !== 'undefined' && invoiceLinks && invoiceLinks.length) { %>
+  <div class="card" style="margin-bottom:12px;">
+    <h3 style="margin-top:0;">Linked service requests</h3>
+    <ul class="plain-list">
+      <% invoiceLinks.forEach(function (l) { %>
+        <li>
+          <strong><%= l.service_name %></strong> — <%= l.sr_title || 'Request' %>
+          · snapshot <%= formatNgn(l.amount_cents) %>
+          · <a href="/admin/service-requests/<%= l.service_request_id %>">Open</a>
+        </li>
+      <% }); %>
+    </ul>
+  </div>
+<% } %>
+<% if (typeof roomBooking !== 'undefined' && roomBooking) { %>
+  <div class="card" style="margin-bottom:12px;">
+    <h3 style="margin-top:0;">Meeting room booking</h3>
+    <p><strong><%= roomBooking.room_name %></strong> · <%= roomBooking.booking_reference %> · <%= roomBooking.status %></p>
+    <p class="page-lead" style="margin:0;"><%= formatDateTime(roomBooking.starts_at) %> → <%= formatDateTime(roomBooking.ends_at) %></p>
+  </div>
+<% } %>
 <table class="data">
   <thead><tr><th>Description</th><th>Amount</th></tr></thead>
   <tbody>
@@ -12,15 +33,29 @@
 </table>
 <% if (inv.notes) { %><p>Notes: <%= inv.notes %></p><% } %>
 
-<% if (['unpaid','sent','overdue','awaiting_confirmation'].includes(inv.status)) { %>
+<% if (['unpaid','sent','overdue'].includes(inv.status)) { %>
   <form method="post" action="/admin/invoices/<%= inv.id %>/paid" onsubmit="return confirm('Mark paid manually?');">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-    <button type="submit" class="btn btn-secondary">Mark paid (manual)</button>
+    <% if (typeof showAccessStartField !== 'undefined' && showAccessStartField) { %>
+      <div class="form-row" style="margin-top:10px;">
+        <label>Access start (optional)</label>
+        <input type="datetime-local" name="access_starts_at" />
+        <small style="display:block;margin-top:6px;color:var(--text-secondary);">For timed workspace bookings linked to this invoice. Leave blank to start access immediately when you confirm payment.</small>
+      </div>
+    <% } %>
+    <button type="submit" class="btn btn-secondary" style="margin-top:8px;">Mark paid (manual)</button>
   </form>
 <% } %>
 <% if (inv.status === 'awaiting_confirmation') { %>
-  <form method="post" action="/admin/invoices/<%= inv.id %>/confirm-bank" style="margin-top:0.5rem;">
+  <form method="post" action="/admin/invoices/<%= inv.id %>/confirm-bank" style="margin-top:0.75rem;">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+    <% if (typeof showAccessStartField !== 'undefined' && showAccessStartField) { %>
+      <div class="form-row">
+        <label>Access start (optional)</label>
+        <input type="datetime-local" name="access_starts_at" />
+        <small style="display:block;margin-top:6px;color:var(--text-secondary);">Leave blank to start access immediately when you confirm the bank transfer.</small>
+      </div>
+    <% } %>
     <button type="submit" class="btn btn-primary">Confirm bank transfer</button>
   </form>
 <% } %>

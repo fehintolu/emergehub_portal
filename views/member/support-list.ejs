@@ -1,6 +1,15 @@
-<p><a class="btn btn-primary" href="/support/new">Open ticket</a>
-  <a class="btn btn-ghost" href="https://wa.me/2348149041843" target="_blank" rel="noopener">Message us on WhatsApp</a></p>
-<% if (!tickets.length) { %><p>No tickets yet.</p><% } %>
+<div class="cta-row" style="margin-top:0;">
+  <a class="btn btn-primary" href="/support/new">Open ticket</a>
+  <a class="btn btn-ghost" href="https://wa.me/2348149041843" target="_blank" rel="noopener">Message us on WhatsApp</a>
+</div>
+<% if (!tickets.length) { %>
+  <div class="activity-card">
+    <div class="activity-empty">
+      <p>No tickets yet.</p>
+      <small><a href="/support/new" class="section-link" style="display:inline-block;margin-top:8px;">Create your first ticket</a></small>
+    </div>
+  </div>
+<% } else { %>
 <div class="table-wrap">
   <table class="data">
     <thead><tr><th>Subject</th><th>Category</th><th>Opened</th><th>Status</th><th>Last update</th></tr></thead>
@@ -17,3 +26,4 @@
     </tbody>
   </table>
 </div>
+<% } %>

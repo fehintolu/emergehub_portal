@@ -14,17 +14,54 @@ const { notifyMember } = require('../lib/notifications');
 const { logActivity } = require('../lib/activity');
 const {
   getSettingsMap,
+  getSetting,
   setSetting,
   invalidateSettingsCache,
 } = require('../lib/portalSettings');
+const {
+  createServiceRequestInvoiceInTx,
+  sendServiceRequestInvoiceNotifications,
+} = require('../lib/serviceRequestInvoice');
 const {
   sendInvoiceCreatedEmail,
   sendServiceStatusEmail,
   sendSupportReplyEmail,
 } = require('../lib/mail');
+const { adminLayoutLocals } = require('../middleware/adminLayoutLocals');
+const { parseDatetimeLocal } = require('../lib/serviceRequestAccess');
+const { onInvoicePaid } = require('../lib/invoicePaidHooks');
 
 const router = express.Router();
 router.use(requireAdmin);
+router.use(adminLayoutLocals);
+
+function parsePlanDurationFields(body) {
+  const raw = String(body.duration_value ?? '').trim();
+  if (raw === '') return { duration_value: null, duration_unit: null };
+  const duration_value = Math.floor(Number(raw));
+  let duration_unit = String(body.duration_unit || '').trim().toLowerCase();
+  if (!['hour', 'day', 'month'].includes(duration_unit)) duration_unit = null;
+  if (!duration_value || duration_value <= 0 || !duration_unit) {
+    return { duration_value: null, duration_unit: null };
+  }
+  return { duration_value, duration_unit };
+}
+
+function slugify(text) {
+  const s = String(text || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return s || 'service';
+}
+
+function isUuid(s) {
+  return (
+    typeof s === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s)
+  );
+}
 
 const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, '../data/uploads');
 const maxMb = Number(process.env.MAX_UPLOAD_MB) || 10;
@@ -81,7 +118,8 @@ router.get('/', async (req, res) => {
   );
   res.render('admin/dashboard', {
     layout: 'layouts/admin',
-    title: 'Admin dashboard',
+    title: 'Dashboard',
+    pageSub: 'Operations overview',
     stats: {
       members: members.rows[0].c,
       activePlans: activePlans.rows[0].c,
@@ -96,6 +134,234 @@ router.get('/', async (req, res) => {
     formatNgn,
     formatDateTime,
   });
+});
+
+router.get('/catalog', async (req, res) => {
+  const cats = await pool.query(`SELECT * FROM service_categories ORDER BY sort_order, id`);
+  const services = await pool.query(
+    `SELECT s.*, c.name AS category_name
+     FROM services s
+     JOIN service_categories c ON c.id = s.category_id
+     ORDER BY c.sort_order, s.sort_order, s.id`
+  );
+  res.render('admin/catalog', {
+    layout: 'layouts/admin',
+    title: 'Workspace services',
+    pageSub: 'Catalogue shown to members — title, description, price, sort order',
+    categories: cats.rows,
+    services: services.rows,
+    msg: req.query.msg || '',
+    err: req.query.err || '',
+    formatNgn,
+  });
+});
+
+router.post('/catalog/sort', requireValidCsrf, async (req, res) => {
+  for (const [k, v] of Object.entries(req.body)) {
+    if (!k.startsWith('sort_')) continue;
+    const id = Number(k.slice(5));
+    const ord = Math.max(0, Math.floor(Number(v) || 0));
+    if (!id) continue;
+    await pool.query(`UPDATE services SET sort_order = $2 WHERE id = $1`, [id, ord]);
+  }
+  res.redirect('/admin/catalog?msg=saved');
+});
+
+router.get('/catalog/new', async (req, res) => {
+  const cats = await pool.query(`SELECT * FROM service_categories ORDER BY sort_order, id`);
+  res.render('admin/catalog-form', {
+    layout: 'layouts/admin',
+    title: 'New service',
+    pageSub: 'Add a member-facing workspace service',
+    mode: 'new',
+    categories: cats.rows,
+    svc: null,
+    err: req.query.err || '',
+  });
+});
+
+router.post('/catalog/new', requireValidCsrf, async (req, res) => {
+  const category_id = Number(req.body.category_id);
+  const name = String(req.body.name || '').trim();
+  const description = String(req.body.description || '').trim();
+  const slugIn = String(req.body.slug || '').trim();
+  const slug = slugify(slugIn || name);
+  const sort_order = Math.max(0, Math.floor(Number(req.body.sort_order) || 0));
+  const priceNgn = Number(req.body.price_ngn || 0);
+  const portal_price_cents = Math.max(0, Math.round(priceNgn * 100));
+  const portal_active = req.body.portal_active === '1';
+  const booking_mode =
+    String(req.body.booking_mode || '') === 'plan_booking' ? 'plan_booking' : 'request';
+  if (!category_id || !name) return res.redirect('/admin/catalog/new?err=1');
+  try {
+    await pool.query(
+      `INSERT INTO services (category_id, slug, name, description, sort_order, portal_price_cents, portal_active, booking_mode)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        category_id,
+        slug,
+        name,
+        description || '',
+        sort_order,
+        portal_price_cents,
+        portal_active,
+        booking_mode,
+      ]
+    );
+  } catch (e) {
+    console.error(e);
+    return res.redirect('/admin/catalog/new?err=slug');
+  }
+  res.redirect('/admin/catalog?msg=created');
+});
+
+router.get('/catalog/:id/edit', async (req, res) => {
+  const id = Number(req.params.id);
+  const { rows } = await pool.query(
+    `SELECT s.*, c.name AS category_name FROM services s
+     JOIN service_categories c ON c.id = s.category_id WHERE s.id = $1`,
+    [id]
+  );
+  if (!rows[0]) return res.status(404).send('Not found');
+  const cats = await pool.query(`SELECT * FROM service_categories ORDER BY sort_order, id`);
+  res.render('admin/catalog-form', {
+    layout: 'layouts/admin',
+    title: 'Edit service',
+    pageSub: rows[0].name,
+    mode: 'edit',
+    categories: cats.rows,
+    svc: rows[0],
+    err: req.query.err || '',
+  });
+});
+
+router.post('/catalog/:id/edit', requireValidCsrf, async (req, res) => {
+  const id = Number(req.params.id);
+  const category_id = Number(req.body.category_id);
+  const name = String(req.body.name || '').trim();
+  const description = String(req.body.description || '').trim();
+  const slugIn = String(req.body.slug || '').trim();
+  const slug = slugify(slugIn || name);
+  const sort_order = Math.max(0, Math.floor(Number(req.body.sort_order) || 0));
+  const priceNgn = Number(req.body.price_ngn || 0);
+  const portal_price_cents = Math.max(0, Math.round(priceNgn * 100));
+  const portal_active = req.body.portal_active === '1';
+  const booking_mode =
+    String(req.body.booking_mode || '') === 'plan_booking' ? 'plan_booking' : 'request';
+  if (!category_id || !name) return res.redirect(`/admin/catalog/${id}/edit?err=1`);
+  try {
+    await pool.query(
+      `UPDATE services SET category_id = $2, slug = $3, name = $4, description = $5,
+       sort_order = $6, portal_price_cents = $7, portal_active = $8, booking_mode = $9
+       WHERE id = $1`,
+      [
+        id,
+        category_id,
+        slug,
+        name,
+        description || '',
+        sort_order,
+        portal_price_cents,
+        portal_active,
+        booking_mode,
+      ]
+    );
+  } catch (e) {
+    console.error(e);
+    return res.redirect(`/admin/catalog/${id}/edit?err=slug`);
+  }
+  res.redirect('/admin/catalog?msg=updated');
+});
+
+router.get('/catalog/:serviceId/plans', async (req, res) => {
+  const serviceId = Number(req.params.serviceId);
+  const { rows: svc } = await pool.query(
+    `SELECT s.*, c.name AS category_name FROM services s
+     JOIN service_categories c ON c.id = s.category_id WHERE s.id = $1`,
+    [serviceId]
+  );
+  if (!svc[0]) return res.status(404).send('Not found');
+  const plans = await pool.query(
+    `SELECT * FROM service_plans WHERE service_id = $1 AND deleted_at IS NULL ORDER BY sort_order, id`,
+    [serviceId]
+  );
+  res.render('admin/service-plans', {
+    layout: 'layouts/admin',
+    title: `Plans — ${svc[0].name}`,
+    pageSub: svc[0].category_name,
+    svc: svc[0],
+    plans: plans.rows,
+    msg: req.query.msg || '',
+    err: req.query.err || '',
+    formatNgn,
+  });
+});
+
+router.post('/catalog/:serviceId/plans/new', requireValidCsrf, async (req, res) => {
+  const serviceId = Number(req.params.serviceId);
+  const title = String(req.body.title || '').trim();
+  const description = String(req.body.description || '').trim();
+  const sort_order = Math.max(0, Math.floor(Number(req.body.sort_order) || 0));
+  const priceNgn = Number(req.body.price_ngn || 0);
+  const price_cents = Math.max(0, Math.round(priceNgn * 100));
+  const active = req.body.active === '1';
+  const { duration_value, duration_unit } = parsePlanDurationFields(req.body);
+  if (!title) return res.redirect(`/admin/catalog/${serviceId}/plans?err=1`);
+  await pool.query(
+    `INSERT INTO service_plans (service_id, title, description, price_cents, sort_order, active, duration_value, duration_unit)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [
+      serviceId,
+      title,
+      description || '',
+      price_cents,
+      sort_order,
+      active,
+      duration_value,
+      duration_unit,
+    ]
+  );
+  res.redirect(`/admin/catalog/${serviceId}/plans?msg=created`);
+});
+
+router.post('/catalog/:serviceId/plans/:planId/edit', requireValidCsrf, async (req, res) => {
+  const serviceId = Number(req.params.serviceId);
+  const planId = req.params.planId;
+  const title = String(req.body.title || '').trim();
+  const description = String(req.body.description || '').trim();
+  const sort_order = Math.max(0, Math.floor(Number(req.body.sort_order) || 0));
+  const priceNgn = Number(req.body.price_ngn || 0);
+  const price_cents = Math.max(0, Math.round(priceNgn * 100));
+  const active = req.body.active === '1';
+  const { duration_value, duration_unit } = parsePlanDurationFields(req.body);
+  if (!title) return res.redirect(`/admin/catalog/${serviceId}/plans?err=1`);
+  await pool.query(
+    `UPDATE service_plans SET title = $3, description = $4, price_cents = $5, sort_order = $6, active = $7,
+     duration_value = $8, duration_unit = $9, updated_at = now()
+     WHERE id = $1::uuid AND service_id = $2`,
+    [
+      planId,
+      serviceId,
+      title,
+      description || '',
+      price_cents,
+      sort_order,
+      active,
+      duration_value,
+      duration_unit,
+    ]
+  );
+  res.redirect(`/admin/catalog/${serviceId}/plans?msg=updated`);
+});
+
+router.post('/catalog/:serviceId/plans/:planId/delete', requireValidCsrf, async (req, res) => {
+  const serviceId = Number(req.params.serviceId);
+  const planId = req.params.planId;
+  await pool.query(
+    `UPDATE service_plans SET deleted_at = now(), updated_at = now() WHERE id = $1::uuid AND service_id = $2`,
+    [planId, serviceId]
+  );
+  res.redirect(`/admin/catalog/${serviceId}/plans?msg=deleted`);
 });
 
 router.get('/members', async (req, res) => {
@@ -349,30 +615,148 @@ router.get('/service-requests/:id', async (req, res) => {
   const admins = await pool.query(
     `SELECT id, username FROM portal_admin_users WHERE deleted_at IS NULL AND active = true`
   );
+  const invIdSet = new Set();
+  if (sr.invoice_id) invIdSet.add(sr.invoice_id);
+  const linkedByCol = await pool.query(
+    `SELECT id FROM invoices WHERE service_request_id = $1::uuid AND deleted_at IS NULL`,
+    [sr.id]
+  );
+  linkedByCol.rows.forEach((r) => invIdSet.add(r.id));
+  const requestInvoices = [];
+  for (const invId of invIdSet) {
+    const invq = await pool.query(`SELECT * FROM invoices WHERE id = $1 AND deleted_at IS NULL`, [
+      invId,
+    ]);
+    if (invq.rows[0]) requestInvoices.push(invq.rows[0]);
+  }
+  requestInvoices.sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
   res.render('admin/service-request-detail', {
     layout: 'layouts/admin',
     title: sr.service_name,
+    pageSub: (sr.member_name || '') + (sr.member_email ? ' · ' + sr.member_email : ''),
     sr,
     updates: updates.rows,
     msgs: msgs.rows,
     docs: docs.rows,
     admins: admins.rows,
+    requestInvoices,
+    query: req.query,
     formatDateTime,
+    formatNgn,
+    formatDate,
   });
+});
+
+router.post('/service-requests/:id/generate-invoice', requireValidCsrf, async (req, res) => {
+  const id = req.params.id;
+  const lineDesc = String(req.body.line_desc || '').trim();
+  const priceNgn = Number(req.body.amount_ngn || 0);
+  const priceCents = Math.max(0, Math.round(priceNgn * 100));
+  const dueDays = Math.min(90, Math.max(1, Number(req.body.due_days || 7) || 7));
+  if (!lineDesc || priceCents <= 0) {
+    return res.redirect(`/admin/service-requests/${id}?err=inv`);
+  }
+  const { rows } = await pool.query(
+    `SELECT sr.*, sv.name AS service_name, m.email, m.full_name, m.notify_email_invoice
+     FROM service_requests sr
+     JOIN services sv ON sv.id = sr.service_id
+     JOIN members m ON m.id = sr.member_id
+     WHERE sr.id = $1 AND sr.deleted_at IS NULL`,
+    [id]
+  );
+  if (!rows[0]) return res.status(404).send('Not found');
+  const sr = rows[0];
+  const due = new Date();
+  due.setDate(due.getDate() + dueDays);
+  const dueStr = due.toISOString().slice(0, 10);
+  const invNo = await nextInvoiceNumber();
+  const client = await pool.connect();
+  let invSummary = null;
+  try {
+    await client.query('BEGIN');
+    invSummary = await createServiceRequestInvoiceInTx(client, {
+      memberId: sr.member_id,
+      serviceRequestId: id,
+      serviceName: sr.service_name,
+      priceCents,
+      invoiceNumber: invNo,
+      dueDateStr: dueStr,
+      lineDescription: lineDesc,
+      notesExtra: ' · Issued by admin',
+    });
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(e);
+    return res.redirect(`/admin/service-requests/${id}?err=inv`);
+  } finally {
+    client.release();
+  }
+  if (invSummary && invSummary.amount) {
+    await sendServiceRequestInvoiceNotifications({
+      memberId: sr.member_id,
+      memberEmail: sr.email,
+      memberName: sr.full_name,
+      notifyInvoiceEmail: sr.notify_email_invoice,
+      invoiceNumber: invSummary.number,
+      amountCents: invSummary.amount,
+      invId: invSummary.id,
+      dueDateStr: dueStr,
+      serviceRequestId: id,
+      title: 'New invoice for your service request',
+      message: `Invoice ${invSummary.number} for ${formatNgn(invSummary.amount)}.`,
+    });
+  }
+  res.redirect(`/admin/service-requests/${id}?msg=inv`);
 });
 
 router.post('/service-requests/:id/status', requireValidCsrf, async (req, res) => {
   const id = req.params.id;
   const status = String(req.body.status || '');
   const adminId = res.locals.currentAdmin.id;
+  const { rows: prevRows } = await pool.query(`SELECT status FROM service_requests WHERE id = $1::uuid`, [id]);
+  const prevStatus = prevRows[0]?.status;
+  let svcStart = null;
+  let svcEnd = null;
+  if (status === 'Completed') {
+    svcStart = String(req.body.service_start_date || '').trim() || null;
+    svcEnd = String(req.body.service_end_date || '').trim() || null;
+    if (!svcStart || !svcEnd) {
+      return res.redirect(`/admin/service-requests/${id}?err=complete_date`);
+    }
+    const a = new Date(svcStart + 'T12:00:00');
+    const z = new Date(svcEnd + 'T12:00:00');
+    if (Number.isNaN(a.getTime()) || Number.isNaN(z.getTime()) || z < a) {
+      return res.redirect(`/admin/service-requests/${id}?err=complete_date`);
+    }
+  }
   await pool.query(
-    `UPDATE service_requests SET status = $2, updated_at = now(), action_required_member = $3 WHERE id = $1`,
-    [id, status, req.body.action_required === '1']
+    `UPDATE service_requests SET status = $2, updated_at = now(), action_required_member = $3,
+       service_start_date = CASE WHEN $4::text = 'Completed' THEN $5::date ELSE service_start_date END,
+       service_end_date = CASE WHEN $4::text = 'Completed' THEN $6::date ELSE service_end_date END
+     WHERE id = $1`,
+    [id, status, req.body.action_required === '1', status, svcStart, svcEnd]
   );
+  if (status === 'Completed' && svcEnd && prevStatus !== 'Completed') {
+    const remind = new Date(svcEnd + 'T12:00:00');
+    remind.setDate(remind.getDate() - 7);
+    const remindStr = remind.toISOString().slice(0, 10);
+    await pool.query(
+      `INSERT INTO service_request_reminders (service_request_id, remind_at, reminder_type)
+       VALUES ($1::uuid, $2::date, 'service_end')`,
+      [id, remindStr]
+    );
+  }
+  const note =
+    status === 'Completed' && svcStart && svcEnd
+      ? `${String(req.body.note || '').trim() || 'Marked completed.'} Service period ${svcStart} → ${svcEnd}.`
+      : String(req.body.note || '').trim() || null;
   await pool.query(
     `INSERT INTO service_request_updates (service_request_id, stage, note, visible_to_member, created_by_admin_id)
      VALUES ($1, $2, $3, true, $4)`,
-    [id, status, String(req.body.note || '').trim() || null, adminId]
+    [id, status, note, adminId]
   );
   const { rows } = await pool.query(
     `SELECT m.id AS member_id, m.email, m.full_name, m.notify_email_service, sv.name AS service_name
@@ -458,10 +842,40 @@ router.get('/invoices/new', async (req, res) => {
   const { rows } = await pool.query(
     `SELECT id, full_name, email FROM members WHERE deleted_at IS NULL ORDER BY full_name LIMIT 500`
   );
+  const memberId = String(req.query.member_id || '').trim();
+  let serviceRequests = [];
+  let roomBookings = [];
+  if (isUuid(memberId)) {
+    const sr = await pool.query(
+      `SELECT sr.id, sr.title, sr.status, COALESCE(sv.portal_price_cents, 0)::bigint AS portal_price_cents, sv.name AS service_name
+       FROM service_requests sr
+       JOIN services sv ON sv.id = sr.service_id
+       WHERE sr.member_id = $1::uuid AND sr.deleted_at IS NULL
+       ORDER BY sr.created_at DESC
+       LIMIT 200`,
+      [memberId]
+    );
+    serviceRequests = sr.rows;
+    const rb = await pool.query(
+      `SELECT rb.id, rb.booking_reference, rb.starts_at, rb.ends_at, rb.total_cents, mr.name AS room_name
+       FROM room_bookings rb
+       JOIN meeting_rooms mr ON mr.id = rb.meeting_room_id
+       WHERE rb.member_id = $1::uuid AND rb.deleted_at IS NULL
+         AND rb.status = 'pending_payment' AND rb.invoice_id IS NULL
+       ORDER BY rb.starts_at ASC
+       LIMIT 50`,
+      [memberId]
+    );
+    roomBookings = rb.rows;
+  }
   res.render('admin/invoice-new', {
     layout: 'layouts/admin',
     title: 'Create invoice',
     members: rows,
+    selectedMemberId: isUuid(memberId) ? memberId : '',
+    serviceRequests,
+    roomBookings,
+    formatNgn,
   });
 });
 
@@ -471,6 +885,11 @@ router.post('/invoices/new', requireValidCsrf, async (req, res) => {
   const notes = String(req.body.notes || '').trim();
   const descriptions = [].concat(req.body.line_desc || []);
   const amounts = [].concat(req.body.line_amount || []);
+  const srIds = [].concat(req.body.sr_ids || []).filter(isUuid);
+  const roomBookingId = isUuid(String(req.body.room_booking_id || '').trim())
+    ? String(req.body.room_booking_id).trim()
+    : null;
+
   let subtotal = 0;
   const items = [];
   for (let i = 0; i < descriptions.length; i++) {
@@ -480,19 +899,72 @@ router.post('/invoices/new', requireValidCsrf, async (req, res) => {
     subtotal += a;
     items.push({ d, a });
   }
-  if (!items.length) return res.redirect('/admin/invoices/new?err=lines');
+
   const invNo = await nextInvoiceNumber();
   const due = new Date();
   due.setDate(due.getDate() + dueDays);
+  const dueStr = due.toISOString().slice(0, 10);
   const client = await pool.connect();
   let invId;
   try {
     await client.query('BEGIN');
+
+    for (const srId of srIds) {
+      const { rows } = await client.query(
+        `SELECT sr.id, sr.title, COALESCE(sv.portal_price_cents, 0)::bigint AS portal_price_cents, sv.name AS service_name
+         FROM service_requests sr
+         JOIN services sv ON sv.id = sr.service_id
+         WHERE sr.id = $1::uuid AND sr.member_id = $2::uuid AND sr.deleted_at IS NULL`,
+        [srId, memberId]
+      );
+      const row = rows[0];
+      if (!row) continue;
+      const pr = Number(row.portal_price_cents) || 0;
+      if (pr > 0) {
+        subtotal += pr;
+        items.push({ d: `${row.service_name} — ${row.title}`, a: pr });
+      }
+    }
+
+    let linkedRoomBookingId = null;
+    if (roomBookingId) {
+      const { rows: rbRows } = await client.query(
+        `SELECT * FROM room_bookings
+         WHERE id = $1::uuid AND member_id = $2::uuid AND deleted_at IS NULL
+           AND status = 'pending_payment' AND invoice_id IS NULL`,
+        [roomBookingId, memberId]
+      );
+      const rb = rbRows[0];
+      if (rb) {
+        linkedRoomBookingId = rb.id;
+        const amt = Number(rb.total_cents) || 0;
+        if (amt > 0) {
+          subtotal += amt;
+          items.push({
+            d: `Meeting room — ${rb.booking_reference}`,
+            a: amt,
+          });
+        }
+      }
+    }
+
+    if (!items.length) {
+      await client.query('ROLLBACK');
+      return res.redirect('/admin/invoices/new?err=lines');
+    }
+
     const ins = await client.query(
-      `INSERT INTO invoices (member_id, invoice_number, status, subtotal_cents, total_cents, due_date, notes)
-       VALUES ($1, $2, 'sent', $3, $3, $4::date, $5)
+      `INSERT INTO invoices (member_id, invoice_number, status, subtotal_cents, total_cents, due_date, notes, service_request_id)
+       VALUES ($1, $2, 'sent', $3, $3, $4::date, $5, $6)
        RETURNING id`,
-      [memberId, invNo, subtotal, due.toISOString().slice(0, 10), notes || null]
+      [
+        memberId,
+        invNo,
+        subtotal,
+        dueStr,
+        notes || null,
+        srIds[0] || null,
+      ]
     );
     invId = ins.rows[0].id;
     let order = 0;
@@ -503,6 +975,37 @@ router.post('/invoices/new', requireValidCsrf, async (req, res) => {
         [invId, it.d, it.a, order++]
       );
     }
+
+    let linkSort = 0;
+    for (const srId of srIds) {
+      const { rows } = await client.query(
+        `SELECT sr.id, sr.title, COALESCE(sv.portal_price_cents, 0)::bigint AS portal_price_cents
+         FROM service_requests sr
+         JOIN services sv ON sv.id = sr.service_id
+         WHERE sr.id = $1::uuid AND sr.member_id = $2::uuid AND sr.deleted_at IS NULL`,
+        [srId, memberId]
+      );
+      if (!rows[0]) continue;
+      const snap = Number(rows[0].portal_price_cents) || 0;
+      await client.query(
+        `INSERT INTO invoice_service_links (invoice_id, service_request_id, amount_cents, description, sort_order)
+         VALUES ($1::uuid, $2::uuid, $3, $4, $5)`,
+        [invId, srId, snap, rows[0].title || null, linkSort++]
+      );
+      await client.query(
+        `UPDATE service_requests SET invoice_id = COALESCE(invoice_id, $2::uuid), updated_at = now()
+         WHERE id = $1::uuid AND (invoice_id IS NULL OR invoice_id = $2::uuid)`,
+        [srId, invId]
+      );
+    }
+
+    if (linkedRoomBookingId) {
+      await client.query(`UPDATE room_bookings SET invoice_id = $2::uuid, updated_at = now() WHERE id = $1::uuid`, [
+        linkedRoomBookingId,
+        invId,
+      ]);
+    }
+
     await client.query('COMMIT');
   } catch (e) {
     await client.query('ROLLBACK');
@@ -549,62 +1052,139 @@ router.get('/invoices/:id', async (req, res) => {
     [req.params.id]
   );
   if (!rows[0]) return res.status(404).send('Not found');
+  const inv = rows[0];
   const items = await pool.query(
     `SELECT * FROM invoice_items WHERE invoice_id = $1 AND deleted_at IS NULL ORDER BY sort_order`,
     [req.params.id]
   );
+  const { rows: linkSched } = await pool.query(
+    `SELECT sr.id AS service_request_id, sp.duration_value, sp.duration_unit
+     FROM invoice_service_links isl
+     JOIN service_requests sr ON sr.id = isl.service_request_id AND sr.deleted_at IS NULL
+     LEFT JOIN service_plans sp ON sp.id = sr.service_plan_id AND sp.deleted_at IS NULL
+     WHERE isl.invoice_id = $1::uuid AND isl.deleted_at IS NULL
+     ORDER BY isl.sort_order NULLS LAST, isl.created_at
+     LIMIT 1`,
+    [req.params.id]
+  );
+  let sched = linkSched[0] || {};
+  if (!sched.service_request_id) {
+    const { rows: schedRows } = await pool.query(
+      `SELECT i.service_request_id, sp.duration_value, sp.duration_unit
+       FROM invoices i
+       LEFT JOIN service_requests sr ON sr.id = i.service_request_id AND sr.deleted_at IS NULL
+       LEFT JOIN service_plans sp ON sp.id = sr.service_plan_id AND sp.deleted_at IS NULL
+       WHERE i.id = $1`,
+      [req.params.id]
+    );
+    sched = schedRows[0] || {};
+  }
+  const du = String(sched.duration_unit || '').toLowerCase();
+  const showAccessStartField = !!(
+    sched.service_request_id &&
+    Number(sched.duration_value) > 0 &&
+    ['hour', 'day', 'month'].includes(du) &&
+    ['unpaid', 'sent', 'overdue', 'awaiting_confirmation'].includes(inv.status)
+  );
+  const { rows: invoiceLinks } = await pool.query(
+    `SELECT isl.*, sr.title AS sr_title, sv.name AS service_name
+     FROM invoice_service_links isl
+     JOIN service_requests sr ON sr.id = isl.service_request_id AND sr.deleted_at IS NULL
+     JOIN services sv ON sv.id = sr.service_id
+     WHERE isl.invoice_id = $1::uuid AND isl.deleted_at IS NULL
+     ORDER BY isl.sort_order, isl.created_at`,
+    [req.params.id]
+  );
+  const { rows: roomBookingRows } = await pool.query(
+    `SELECT rb.*, mr.name AS room_name
+     FROM room_bookings rb
+     JOIN meeting_rooms mr ON mr.id = rb.meeting_room_id
+     WHERE rb.invoice_id = $1::uuid AND rb.deleted_at IS NULL
+     LIMIT 1`,
+    [req.params.id]
+  );
   res.render('admin/invoice-detail', {
     layout: 'layouts/admin',
-    title: rows[0].invoice_number,
-    inv: rows[0],
+    title: inv.invoice_number,
+    inv,
     items: items.rows,
+    invoiceLinks: invoiceLinks,
+    roomBooking: roomBookingRows[0] || null,
+    showAccessStartField,
     formatNgn,
     formatDate,
+    formatDateTime,
   });
 });
 
 router.post('/invoices/:id/paid', requireValidCsrf, async (req, res) => {
   const id = req.params.id;
-  const { rows } = await pool.query(
-    `SELECT * FROM invoices WHERE id = $1`,
-    [id]
-  );
-  const inv = rows[0];
-  await pool.query(
-    `UPDATE invoices SET status = 'paid', updated_at = now() WHERE id = $1`,
-    [id]
-  );
-  await pool.query(
-    `INSERT INTO payments (invoice_id, member_id, amount_cents, method, status, receipt_number)
-     VALUES ($1, $2, $3, 'manual', 'completed', $4)`,
-    [
-      id,
-      inv.member_id,
-      inv.total_cents,
-      `RCP-${crypto.randomBytes(4).toString('hex').toUpperCase()}`,
-    ]
-  );
+  const startAt = parseDatetimeLocal(req.body.access_starts_at);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(`SELECT * FROM invoices WHERE id = $1 FOR UPDATE`, [id]);
+    const inv = rows[0];
+    if (!inv) {
+      await client.query('ROLLBACK');
+      return res.status(404).send('Not found');
+    }
+    await client.query(`UPDATE invoices SET status = 'paid', updated_at = now() WHERE id = $1`, [id]);
+    await client.query(
+      `INSERT INTO payments (invoice_id, member_id, amount_cents, method, status, receipt_number)
+       VALUES ($1, $2, $3, 'manual', 'completed', $4)`,
+      [
+        id,
+        inv.member_id,
+        inv.total_cents,
+        `RCP-${crypto.randomBytes(4).toString('hex').toUpperCase()}`,
+      ]
+    );
+    await onInvoicePaid(client, id, startAt);
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(e);
+    throw e;
+  } finally {
+    client.release();
+  }
   res.redirect(`/admin/invoices/${id}`);
 });
 
 router.post('/invoices/:id/confirm-bank', requireValidCsrf, async (req, res) => {
   const id = req.params.id;
-  const { rows } = await pool.query(`SELECT * FROM invoices WHERE id = $1`, [id]);
-  const inv = rows[0];
-  await pool.query(
-    `UPDATE invoices SET status = 'paid', updated_at = now() WHERE id = $1`,
-    [id]
-  );
-  await pool.query(
-    `INSERT INTO payments (invoice_id, member_id, amount_cents, method, status, receipt_number)
-     VALUES ($1, $2, $3, 'bank_transfer', 'completed', $4)`,
-    [
-      id,
-      inv.member_id,
-      inv.total_cents,
-      `RCP-${crypto.randomBytes(4).toString('hex').toUpperCase()}`,
-    ]
-  );
+  const startAt = parseDatetimeLocal(req.body.access_starts_at);
+  const client = await pool.connect();
+  let inv;
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(`SELECT * FROM invoices WHERE id = $1 FOR UPDATE`, [id]);
+    inv = rows[0];
+    if (!inv) {
+      await client.query('ROLLBACK');
+      return res.status(404).send('Not found');
+    }
+    await client.query(`UPDATE invoices SET status = 'paid', updated_at = now() WHERE id = $1`, [id]);
+    await client.query(
+      `INSERT INTO payments (invoice_id, member_id, amount_cents, method, status, receipt_number)
+       VALUES ($1, $2, $3, 'bank_transfer', 'completed', $4)`,
+      [
+        id,
+        inv.member_id,
+        inv.total_cents,
+        `RCP-${crypto.randomBytes(4).toString('hex').toUpperCase()}`,
+      ]
+    );
+    await onInvoicePaid(client, id, startAt);
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(e);
+    throw e;
+  } finally {
+    client.release();
+  }
   await notifyMember({
     memberId: inv.member_id,
     title: 'Payment confirmed',

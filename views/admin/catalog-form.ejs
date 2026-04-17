@@ -1,0 +1,61 @@
+<% var priceNgn = (mode === 'edit' && svc) ? Math.round(Number(svc.portal_price_cents || 0) / 100) : 0; %>
+<% if (err === '1') { %>
+  <div class="alert alert-error">Please fill in category and title.</div>
+<% } %>
+<% if (err === 'slug') { %>
+  <div class="alert alert-error">Slug conflict — try a different slug or title.</div>
+<% } %>
+
+<div class="card anim anim-2" style="max-width:640px;">
+  <form method="post" action="<%= mode === 'new' ? '/admin/catalog/new' : '/admin/catalog/' + svc.id + '/edit' %>">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+    <div class="form-row">
+      <label>Category</label>
+      <select name="category_id" required>
+        <% categories.forEach(function (c) { %>
+          <option value="<%= c.id %>" <%= (mode === 'edit' && svc && svc.category_id === c.id) ? 'selected' : '' %>><%= c.name %></option>
+        <% }); %>
+      </select>
+    </div>
+    <div class="form-row">
+      <label>Title</label>
+      <input type="text" name="name" required value="<%= mode === 'edit' && svc ? svc.name : '' %>" />
+    </div>
+    <div class="form-row">
+      <label>URL slug</label>
+      <input type="text" name="slug" placeholder="auto from title if empty" value="<%= mode === 'edit' && svc ? svc.slug : '' %>" />
+    </div>
+    <div class="form-row">
+      <label>Description</label>
+      <textarea name="description" rows="5"><%= mode === 'edit' && svc ? (svc.description || '') : '' %></textarea>
+    </div>
+    <div class="form-row">
+      <label><input type="checkbox" name="portal_active" value="1" <%= (mode === 'edit' && svc && svc.portal_active === false) ? '' : 'checked' %> /> Show in member portal</label>
+      <small style="display:block;margin-top:6px;color:var(--text-secondary);">Hidden services are not listed for members.</small>
+    </div>
+    <div class="form-row">
+      <label>Member flow</label>
+      <select name="booking_mode">
+        <option value="request" <%= (!svc || svc.booking_mode !== 'plan_booking') ? 'selected' : '' %>>Service request (description form)</option>
+        <option value="plan_booking" <%= (mode === 'edit' && svc && svc.booking_mode === 'plan_booking') ? 'selected' : '' %>>Bookable on My Workspace (pick plan → invoice)</option>
+      </select>
+      <small style="display:block;margin-top:6px;color:var(--text-secondary);">Bookable services use <a href="<%= mode === 'edit' && svc ? '/admin/catalog/' + svc.id + '/plans' : '#' %>" class="section-link">Plans</a> for pricing.</small>
+    </div>
+    <div class="form-row">
+      <label>Default request price (₦, whole naira)</label>
+      <input type="number" name="price_ngn" min="0" step="1" value="<%= priceNgn %>" />
+      <small style="display:block;margin-top:6px;color:var(--text-secondary);">For <strong>request</strong> flow: if &gt; 0, submitting a request auto-creates an invoice. Bookable services use plan prices instead.</small>
+    </div>
+    <div class="form-row">
+      <label>Sort order</label>
+      <input type="number" name="sort_order" min="0" step="1" value="<%= mode === 'edit' && svc ? svc.sort_order : 0 %>" />
+    </div>
+    <p style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;">
+      <button type="submit" class="btn btn-primary"><%= mode === 'new' ? 'Create service' : 'Save changes' %></button>
+      <% if (mode === 'edit' && svc) { %>
+        <a class="btn btn-secondary" href="/admin/catalog/<%= svc.id %>/plans">Manage plans</a>
+      <% } %>
+      <a class="btn btn-secondary" href="/admin/catalog">Cancel</a>
+    </p>
+  </form>
+</div>

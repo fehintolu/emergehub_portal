@@ -6,6 +6,7 @@ const { paystackKeys } = require('../lib/portalSettings');
 const { logActivity } = require('../lib/activity');
 const { notifyMember } = require('../lib/notifications');
 const { sendPaymentConfirmedEmail } = require('../lib/mail');
+const { onInvoicePaid } = require('../lib/invoicePaidHooks');
 
 const router = express.Router();
 
@@ -75,12 +76,16 @@ router.post(
         `UPDATE invoices SET status = 'paid', updated_at = now() WHERE id = $1`,
         [pRow.invoice_id]
       );
-      await notifyMember({
-        memberId: pRow.member_id,
-        title: 'Payment confirmed',
-        message: `Invoice ${pRow.invoice_number} has been paid.`,
-        linkUrl: '/billing',
-      });
+      await onInvoicePaid(client, pRow.invoice_id, null);
+      await notifyMember(
+        {
+          memberId: pRow.member_id,
+          title: 'Payment confirmed',
+          message: `Invoice ${pRow.invoice_number} has been paid.`,
+          linkUrl: '/billing',
+        },
+        client
+      );
       await logActivity(
         {
           memberId: pRow.member_id,

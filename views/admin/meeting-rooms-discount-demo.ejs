@@ -1,0 +1,29 @@
+<p class="page-lead"><a href="/admin/meeting-rooms">← Hub</a></p>
+<div class="card" style="margin-bottom:16px;">
+  <h3 style="margin-top:0;">Try the discount engine</h3>
+  <form method="post" action="/admin/meeting-rooms/discount-demo">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+    <div class="form-row">
+      <label>Room (optional — uses that room’s tiers + globals)</label>
+      <select name="room_id">
+        <option value="">— Global tiers only —</option>
+        <% rooms.forEach(function (r) { %>
+          <option value="<%= r.id %>" <%= result && String(result.roomId) === String(r.id) ? 'selected' : '' %>><%= r.name %></option>
+        <% }); %>
+      </select>
+    </div>
+    <div class="form-row"><label>Duration (hours)</label><input type="number" name="hours" min="0.25" step="0.25" value="<%= result ? result.hours : 2 %>" /></div>
+    <div class="form-row"><label>Test hourly rate (cents)</label><input type="number" name="hourly_rate_cents" value="<%= result ? result.hourly_rate_cents : 100000 %>" /></div>
+    <button type="submit" class="btn btn-primary">Calculate</button>
+  </form>
+</div>
+
+<% if (result) { %>
+  <div class="card">
+    <h3 style="margin-top:0;">Result</h3>
+    <p>Duration: <strong><%= result.durationMinutes %> min</strong></p>
+    <p>Base: <strong><%= formatNgn(result.quote.base_cents) %></strong></p>
+    <p>Discount: <strong><%= formatNgn(result.quote.discount_cents) %></strong><% if (result.quote.discount_tier_label) { %> (<%= result.quote.discount_tier_label %>)<% } %></p>
+    <p>Total: <strong><%= formatNgn(result.quote.total_cents) %></strong></p>
+  </div>
+<% } %>

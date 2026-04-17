@@ -33,6 +33,16 @@ journalctl -u emergehub-portal -f
 cd /apps/emergehub-portal && npm run setup-db
 ```
 
+### Meeting rooms (legacy data)
+
+Older **`meeting_room_bookings`** rows (workspace JSON room list) are unchanged. New paid flow uses **`room_bookings`** and **`meeting_rooms`**. Optional migration: recreate bookings manually or with a one-off SQL script; the portal does not auto-migrate legacy rows.
+
+### Background jobs (cron)
+
+In-process jobs (room payment expiry, 30‑minute payment warnings, service-end reminders) run when **`ENABLE_CRON=1`** is set in the environment. Leave it unset in local dev to avoid duplicate schedulers if you run multiple `node server.js` processes. Production: set **`ENABLE_CRON=1`** on a **single** app instance (or use an external scheduler instead).
+
+Optional hub timezone for availability checks: **`PORTAL_TZ`** (default **`Africa/Lagos`**).
+
 ## Paystack
 
 1. Add **public** and **secret** keys in `.env` and/or **Portal admin → Settings** (secret is never sent to the browser).
@@ -82,6 +92,8 @@ After `npm run setup-db`, sign in at **`/admin/login`**:
 | `PAYSTACK_PUBLIC_KEY` / `PAYSTACK_SECRET_KEY` | Optional; can be overridden in admin settings |
 | `UPLOAD_DIR` | Absolute path for uploaded files (outside nginx root) |
 | `MAX_UPLOAD_MB` | Per-file limit (default 10) |
+| `ENABLE_CRON` | Set to `1` to run portal maintenance jobs (single instance only) |
+| `PORTAL_TZ` | IANA timezone for room availability checks (default `Africa/Lagos`) |
 
 Copy `.env.example` to `.env` and fill in values.
 

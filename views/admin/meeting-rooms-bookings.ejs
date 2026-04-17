@@ -1,0 +1,78 @@
+<p class="page-lead"><a href="/admin/meeting-rooms">← Hub</a></p>
+<% if (typeof query !== 'undefined' && query.msg === 'manual') { %><div class="alert alert-success">Manual booking created (confirmed, no invoice).</div><% } %>
+<% if (typeof query !== 'undefined' && query.msg === 'manualinv') { %><div class="alert alert-success">Manual booking created with invoice (pending payment).</div><% } %>
+<% if (typeof query !== 'undefined' && query.err === 'slot') { %><div class="alert alert-error">Slot not available (overlap, block, or hours).</div><% } %>
+
+<form method="get" class="card" style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;">
+  <div class="form-row" style="margin:0;">
+    <label>Status</label>
+    <select name="status">
+      <option value="">Any</option>
+      <% ['pending_payment','confirmed','cancelled','expired','completed'].forEach(function (s) { %>
+        <option value="<%= s %>" <%= filters.status === s ? 'selected' : '' %>><%= s %></option>
+      <% }); %>
+    </select>
+  </div>
+  <div class="form-row" style="margin:0;">
+    <label>Room</label>
+    <select name="room_id">
+      <option value="">Any</option>
+      <% rooms.forEach(function (r) { %>
+        <option value="<%= r.id %>" <%= String(filters.room_id) === String(r.id) ? 'selected' : '' %>><%= r.name %></option>
+      <% }); %>
+    </select>
+  </div>
+  <button type="submit" class="btn btn-primary">Filter</button>
+</form>
+
+<div class="card" style="margin-bottom:20px;">
+  <h3 style="margin-top:0;">Manual booking</h3>
+  <p class="page-lead">Paste a member UUID from <a href="/admin/members">Members</a>. Optional invoice uses the same pricing engine as the member portal.</p>
+  <form method="post" action="/admin/meeting-rooms/bookings/manual">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+    <div class="form-row"><label>Member ID</label><input name="member_id" required placeholder="uuid" style="max-width:420px;" /></div>
+    <div class="form-row">
+      <label>Room</label>
+      <select name="room_id" required>
+        <% rooms.forEach(function (r) { %>
+          <option value="<%= r.id %>"><%= r.name %></option>
+        <% }); %>
+      </select>
+    </div>
+    <div class="form-row"><label>Start</label><input type="datetime-local" name="starts_at" required /></div>
+    <div class="form-row"><label>End</label><input type="datetime-local" name="ends_at" required /></div>
+    <div class="form-row"><label>Purpose</label><input name="purpose" /></div>
+    <div class="form-row"><label><input type="checkbox" name="create_invoice" value="1" /> Create invoice (pending payment + 2h deadline)</label></div>
+    <button type="submit" class="btn btn-secondary">Create</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0;">Recent bookings</h3>
+  <% if (!rows.length) { %><p style="margin:0;">No rows.</p><% } else { %>
+    <table style="width:100%;border-collapse:collapse;font-size:14px;">
+      <thead>
+        <tr>
+          <th style="text-align:left;padding:6px;">Room</th>
+          <th style="text-align:left;padding:6px;">Member</th>
+          <th style="text-align:left;padding:6px;">When</th>
+          <th style="text-align:left;padding:6px;">Status</th>
+          <th style="text-align:right;padding:6px;">Total</th>
+          <th style="text-align:left;padding:6px;">Ref</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% rows.forEach(function (r) { %>
+          <tr>
+            <td style="padding:6px;vertical-align:top;"><%= r.room_name %></td>
+            <td style="padding:6px;vertical-align:top;"><%= r.full_name || '—' %><br/><small style="opacity:0.75;"><%= r.email || '' %></small></td>
+            <td style="padding:6px;vertical-align:top;"><%= formatDateTime(r.starts_at) %></td>
+            <td style="padding:6px;vertical-align:top;"><%= r.status %></td>
+            <td style="padding:6px;vertical-align:top;text-align:right;"><%= formatNgn(r.total_cents) %></td>
+            <td style="padding:6px;vertical-align:top;"><code style="font-size:12px;"><%= r.booking_reference %></code></td>
+          </tr>
+        <% }); %>
+      </tbody>
+    </table>
+  <% } %>
+</div>

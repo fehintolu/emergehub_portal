@@ -1,0 +1,345 @@
+const express = require('express');
+const { pool } = require('../lib/db');
+const { requireValidCsrf } = require('../lib/csrf');
+const { requireMember, requireVerifiedEmail } = require('../middleware/memberAuth');
+const { memberLayoutLocals } = require('../middleware/memberLayoutLocals');
+const { trackMemberSession } = require('../middleware/trackMemberSession');
+const { formatNgn, formatDate, formatDateTime } = require('../lib/format');
+const { nextInvoiceNumber } = require('../lib/invoiceNumber');
+const { getSetting } = require('../lib/portalSettings');
+const { unreadCount } = require('../lib/notifications');
+const { logActivity } = require('../lib/activity');
+const { sendServiceRequestInvoiceNotifications } = require('../lib/serviceRequestInvoice');
+const { computeRoomQuote } = require('../lib/roomQuote');
+const { assertSlotBookable } = require('../lib/roomSlot');
+const { loadDiscountTiers, createRoomBookingWithInvoice } = require('../lib/roomBookingInvoice');
+
+const router = express.Router();
+
+router.use(
+  requireMember,
+  requireVerifiedEmail,
+  memberLayoutLocals,
+  trackMemberSession
+);
+
+function isUuid(s) {
+  return typeof s === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
+}
+
+router.get('/meeting-rooms/my-bookings', async (req, res) => {
+  const m = res.locals.currentMember;
+  const { rows } = await pool.query(
+    `SELECT rb.*, mr.name AS room_name
+     FROM room_bookings rb
+     JOIN meeting_rooms mr ON mr.id = rb.meeting_room_id
+     WHERE rb.member_id = $1 AND rb.deleted_at IS NULL
+     ORDER BY rb.starts_at DESC
+     LIMIT 100`,
+    [m.id]
+  );
+  res.render('member/meeting-rooms-my-bookings', {
+    layout: 'layouts/member',
+    title: 'My room bookings',
+    pageSub: 'Hold, pay, and manage meeting room reservations',
+    rows,
+    formatDate,
+    formatDateTime,
+    formatNgn,
+    notifCount: await unreadCount(m.id),
+    query: req.query,
+  });
+});
+
+router.get('/meeting-rooms/bookings/:bookingId/confirmation', async (req, res) => {
+  const m = res.locals.currentMember;
+  const bid = req.params.bookingId;
+  if (!isUuid(bid)) return res.status(404).send('Not found');
+  const { rows } = await pool.query(
+    `SELECT rb.*, mr.name AS room_name, mr.description AS room_description
+     FROM room_bookings rb
+     JOIN meeting_rooms mr ON mr.id = rb.meeting_room_id
+     WHERE rb.id = $1::uuid AND rb.member_id = $2 AND rb.deleted_at IS NULL`,
+    [bid, m.id]
+  );
+  const b = rows[0];
+  if (!b) return res.status(404).send('Not found');
+  res.render('member/meeting-room-confirmation', {
+    layout: 'layouts/member',
+    title: 'Booking confirmation',
+    pageSub: b.booking_reference,
+    b,
+    formatDate,
+    formatDateTime,
+    formatNgn,
+    notifCount: await unreadCount(m.id),
+  });
+});
+
+router.post('/meeting-rooms/bookings/:bookingId/cancel', requireValidCsrf, async (req, res) => {
+  const m = res.locals.currentMember;
+  const bid = req.params.bookingId;
+  if (!isUuid(bid)) return res.status(404).send('Not found');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `SELECT rb.*, i.status AS invoice_status
+       FROM room_bookings rb
+       LEFT JOIN invoices i ON i.id = rb.invoice_id AND i.deleted_at IS NULL
+       WHERE rb.id = $1::uuid AND rb.member_id = $2 AND rb.deleted_at IS NULL
+       FOR UPDATE OF rb`,
+      [bid, m.id]
+    );
+    const b = rows[0];
+    if (!b) {
+      await client.query('ROLLBACK');
+      return res.redirect('/meeting-rooms/my-bookings?err=notfound');
+    }
+    if (b.status === 'cancelled' || b.status === 'expired') {
+      await client.query('ROLLBACK');
+      return res.redirect('/meeting-rooms/my-bookings?err=state');
+    }
+
+    const reason = String(req.body.reason || '').trim() || 'Cancelled by member';
+
+    if (b.status === 'pending_payment') {
+      await client.query(
+        `UPDATE room_bookings SET status = 'cancelled', cancelled_at = now(), cancellation_reason = $2, updated_at = now()
+         WHERE id = $1::uuid`,
+        [bid, reason]
+      );
+      if (b.invoice_id) {
+        await client.query(
+          `UPDATE invoices SET status = 'cancelled', updated_at = now()
+           WHERE id = $1::uuid AND member_id = $2::uuid
+             AND status IN ('unpaid', 'sent', 'overdue', 'awaiting_confirmation')`,
+          [b.invoice_id, m.id]
+        );
+      }
+      await client.query('COMMIT');
+      return res.redirect('/meeting-rooms/my-bookings?msg=cancelled');
+    }
+
+    if (b.status !== 'confirmed') {
+      await client.query('ROLLBACK');
+      return res.redirect('/meeting-rooms/my-bookings?err=state');
+    }
+
+    const hoursUntil = (new Date(b.starts_at).getTime() - Date.now()) / (3600 * 1000);
+    if (hoursUntil < 24) {
+      await client.query('ROLLBACK');
+      return res.redirect('/meeting-rooms/my-bookings?err=24h');
+    }
+
+    await client.query(
+      `UPDATE room_bookings SET status = 'cancelled', cancelled_at = now(), cancellation_reason = $2, updated_at = now()
+       WHERE id = $1::uuid`,
+      [bid, reason]
+    );
+    await client.query(
+      `INSERT INTO credit_notes (member_id, source_invoice_id, room_booking_id, amount_cents, reason, created_by_admin_id)
+       VALUES ($1, $2, $3, $4, $5, NULL)`,
+      [m.id, b.invoice_id || null, b.id, b.total_cents, reason]
+    );
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(e);
+    return res.redirect('/meeting-rooms/my-bookings?err=server');
+  } finally {
+    client.release();
+  }
+  res.redirect('/meeting-rooms/my-bookings?msg=credit');
+});
+
+router.get('/meeting-rooms', async (req, res) => {
+  const m = res.locals.currentMember;
+  const { rows } = await pool.query(
+    `SELECT id, name, description, capacity, hourly_rate_cents, amenities, photo_path
+     FROM meeting_rooms
+     WHERE active = true AND deleted_at IS NULL
+     ORDER BY sort_order, name`
+  );
+  res.render('member/meeting-rooms-index', {
+    layout: 'layouts/member',
+    title: 'Meeting rooms',
+    pageSub: 'Book a room with instant pricing and online payment',
+    rooms: rows,
+    formatNgn,
+    notifCount: await unreadCount(m.id),
+  });
+});
+
+router.get('/meeting-rooms/:roomId/quote', async (req, res) => {
+  const roomId = req.params.roomId;
+  if (!isUuid(roomId)) return res.status(404).json({ ok: false, error: 'not_found' });
+  const starts = new Date(String(req.query.starts_at || ''));
+  const durationMinutes = Math.max(1, Math.floor(Number(req.query.duration_minutes || 60)));
+  if (Number.isNaN(starts.getTime())) {
+    return res.status(400).json({ ok: false, error: 'bad_start' });
+  }
+  const ends = new Date(starts.getTime() + durationMinutes * 60 * 1000);
+  const { rows: rm } = await pool.query(
+    `SELECT * FROM meeting_rooms WHERE id = $1::uuid AND active = true AND deleted_at IS NULL`,
+    [roomId]
+  );
+  if (!rm[0]) return res.status(404).json({ ok: false, error: 'not_found' });
+  const tiers = await loadDiscountTiers(pool, roomId);
+  const quote = computeRoomQuote(
+    { hourly_rate_cents: rm[0].hourly_rate_cents, durationMinutes },
+    tiers
+  );
+  let bookable = true;
+  let bookableError = null;
+  try {
+    await assertSlotBookable(pool, roomId, starts, ends);
+  } catch (e) {
+    bookable = false;
+    bookableError = e.code || 'slot';
+  }
+  res.json({
+    ok: true,
+    bookable,
+    bookableError,
+    quote,
+    ends_at: ends.toISOString(),
+  });
+});
+
+router.get('/meeting-rooms/:roomId/busy', async (req, res) => {
+  const roomId = req.params.roomId;
+  if (!isUuid(roomId)) return res.status(404).json({ ok: false });
+  const from = new Date(String(req.query.from || ''));
+  const to = new Date(String(req.query.to || ''));
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || to <= from) {
+    return res.status(400).json({ ok: false, error: 'range' });
+  }
+  const maxSpan = 40 * 24 * 3600 * 1000;
+  if (to.getTime() - from.getTime() > maxSpan) {
+    return res.status(400).json({ ok: false, error: 'span' });
+  }
+  const { rows: bk } = await pool.query(
+    `SELECT starts_at, ends_at, 'booking' AS kind, status
+     FROM room_bookings
+     WHERE meeting_room_id = $1::uuid AND deleted_at IS NULL
+       AND status IN ('confirmed', 'pending_payment')
+       AND starts_at < $3::timestamptz AND ends_at > $2::timestamptz`,
+    [roomId, from, to]
+  );
+  const { rows: bl } = await pool.query(
+    `SELECT starts_at, ends_at, 'block' AS kind
+     FROM room_blocked_slots
+     WHERE meeting_room_id = $1::uuid AND deleted_at IS NULL
+       AND starts_at < $3::timestamptz AND ends_at > $2::timestamptz`,
+    [roomId, from, to]
+  );
+  res.json({
+    ok: true,
+    busy: [...bk, ...bl].map((r) => ({
+      starts_at: r.starts_at,
+      ends_at: r.ends_at,
+      kind: r.kind,
+      status: r.status || null,
+    })),
+  });
+});
+
+router.get('/meeting-rooms/:roomId', async (req, res) => {
+  const m = res.locals.currentMember;
+  const roomId = req.params.roomId;
+  if (!isUuid(roomId)) return res.status(404).send('Not found');
+  const { rows } = await pool.query(
+    `SELECT * FROM meeting_rooms WHERE id = $1::uuid AND active = true AND deleted_at IS NULL`,
+    [roomId]
+  );
+  const room = rows[0];
+  if (!room) return res.status(404).send('Not found');
+  const tiers = await loadDiscountTiers(pool, roomId);
+  res.render('member/meeting-room-detail', {
+    layout: 'layouts/member',
+    title: room.name,
+    pageSub: 'Choose a start time and duration for a live quote',
+    room,
+    tiers,
+    formatNgn,
+    notifCount: await unreadCount(m.id),
+    query: req.query,
+  });
+});
+
+router.post('/meeting-rooms/:roomId/book', requireValidCsrf, async (req, res) => {
+  const m = res.locals.currentMember;
+  const roomId = req.params.roomId;
+  if (!isUuid(roomId)) return res.status(404).send('Not found');
+  const starts = new Date(String(req.body.starts_at || ''));
+  const durationMinutes = Math.max(1, Math.floor(Number(req.body.duration_minutes || 60)));
+  const purpose = String(req.body.purpose || '').trim();
+  if (Number.isNaN(starts.getTime())) {
+    return res.redirect(`/meeting-rooms/${roomId}?err=time`);
+  }
+  const ends = new Date(starts.getTime() + durationMinutes * 60 * 1000);
+
+  const { rows: rm } = await pool.query(
+    `SELECT * FROM meeting_rooms WHERE id = $1::uuid AND active = true AND deleted_at IS NULL`,
+    [roomId]
+  );
+  const room = rm[0];
+  if (!room) return res.status(404).send('Not found');
+
+  const dueDays = Number((await getSetting('default_invoice_due_days', '7')) || 7) || 7;
+  const due = new Date();
+  due.setDate(due.getDate() + dueDays);
+  const dueStr = due.toISOString().slice(0, 10);
+  const invNo = await nextInvoiceNumber();
+
+  const client = await pool.connect();
+  let summary;
+  try {
+    await client.query('BEGIN');
+    summary = await createRoomBookingWithInvoice(client, {
+      memberId: m.id,
+      roomRow: room,
+      startsAt: starts,
+      endsAt: ends,
+      purpose,
+      invoiceNumber: invNo,
+      dueDateStr: dueStr,
+    });
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(e);
+    const q = e.code === 'OVERLAP' || e.code === 'BLOCK' || e.code === 'HOURS' || e.code === 'SCHEDULE' ? 'slot' : 'book';
+    return res.redirect(`/meeting-rooms/${roomId}?err=${q}`);
+  } finally {
+    client.release();
+  }
+
+  await logActivity({
+    memberId: m.id,
+    eventType: 'booking',
+    title: 'Meeting room booking',
+    body: room.name,
+    entityType: 'room_booking',
+    entityId: summary.bookingId,
+  });
+
+  await sendServiceRequestInvoiceNotifications({
+    memberId: m.id,
+    memberEmail: m.email,
+    memberName: m.full_name,
+    notifyInvoiceEmail: m.notify_email_invoice,
+    invoiceNumber: invNo,
+    amountCents: summary.quote.total_cents,
+    invId: summary.invoiceId,
+    dueDateStr: dueStr,
+    serviceRequestId: null,
+    title: 'Invoice for meeting room',
+    message: `Invoice ${invNo} for ${room.name}. Pay within 2 hours to confirm your slot.`,
+  });
+
+  res.redirect(`/meeting-rooms/my-bookings?msg=booked&ref=${encodeURIComponent(summary.bookingRef)}`);
+});
+
+module.exports = router;

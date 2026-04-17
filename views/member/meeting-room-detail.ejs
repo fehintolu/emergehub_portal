@@ -1,0 +1,107 @@
+<% if (typeof query !== 'undefined' && query.err) { %>
+  <div class="alert alert-error">
+    <% if (query.err === 'slot') { %>That slot is not available. Pick another time.<% } %>
+    <% if (query.err === 'book') { %>We could not complete the booking. Please try again.<% } %>
+    <% if (query.err === 'time') { %>Choose a valid start time.<% } %>
+  </div>
+<% } %>
+<div class="card" style="margin-bottom:16px;">
+  <h2 class="page-title" style="margin-top:0;"><%= room.name %></h2>
+  <% if (room.description) { %><p class="page-lead"><%= room.description %></p><% } %>
+  <p style="margin:0;">Hourly rate: <strong><%= formatNgn(room.hourly_rate_cents) %></strong></p>
+</div>
+
+<% if (tiers && tiers.length) { %>
+  <div class="card" style="margin-bottom:16px;">
+    <h3 style="margin-top:0;">Discount tiers</h3>
+    <ul style="margin:0;padding-left:18px;">
+      <% tiers.forEach(function (t) { %>
+        <li><%= t.label || (t.discount_percent + '% off') %> — from <%= t.min_hours %> h booked<%= t.meeting_room_id ? '' : ' (default)' %></li>
+      <% }); %>
+    </ul>
+  </div>
+<% } %>
+
+<div class="card">
+  <h3 style="margin-top:0;">Book a slot</h3>
+  <div class="form-row">
+    <label for="starts_at">Start (hub time)</label>
+    <input type="datetime-local" id="starts_at" name="starts_at" required />
+  </div>
+  <div class="form-row">
+    <label for="duration_minutes">Duration (minutes)</label>
+    <input type="number" id="duration_minutes" name="duration_minutes" value="60" min="15" step="15" />
+  </div>
+  <div class="form-row">
+    <label for="purpose">Purpose (optional)</label>
+    <textarea id="purpose" name="purpose" rows="2"></textarea>
+  </div>
+  <button type="button" class="btn" id="btn-quote">Update quote</button>
+
+  <div id="quote-panel" style="margin-top:16px;display:none;">
+    <p style="margin:0 0 8px;"><strong>Quote</strong></p>
+    <ul id="quote-lines" style="margin:0 0 12px;padding-left:18px;"></ul>
+    <p id="quote-total" style="font-size:18px;margin:0 0 12px;"></p>
+    <p id="quote-slot" class="page-lead" style="margin:0 0 12px;"></p>
+    <form method="post" action="/meeting-rooms/<%= room.id %>/book" id="book-form" style="display:none;">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+      <input type="hidden" name="starts_at" id="book_starts_at" />
+      <input type="hidden" name="duration_minutes" id="book_duration_minutes" />
+      <input type="hidden" name="purpose" id="book_purpose" />
+      <button type="submit" class="btn btn-primary">Create booking &amp; invoice</button>
+    </form>
+  </div>
+</div>
+<p style="margin-top:20px;"><a href="/meeting-rooms">All rooms</a> · <a href="/meeting-rooms/my-bookings">My bookings</a></p>
+
+<script>
+(function () {
+  var roomId = <%- JSON.stringify(String(room.id)) %>;
+  var btn = document.getElementById('btn-quote');
+  var panel = document.getElementById('quote-panel');
+  var lines = document.getElementById('quote-lines');
+  var totalEl = document.getElementById('quote-total');
+  var slotEl = document.getElementById('quote-slot');
+  var bookForm = document.getElementById('book-form');
+  function fmtNgn(cents) {
+    var n = Number(cents) || 0;
+    return new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(n / 100);
+  }
+  async function runQuote() {
+    var starts = document.getElementById('starts_at').value;
+    var dur = document.getElementById('duration_minutes').value;
+    if (!starts) { alert('Pick a start time.'); return; }
+    var url = '/meeting-rooms/' + roomId + '/quote?starts_at=' + encodeURIComponent(starts) + '&duration_minutes=' + encodeURIComponent(dur);
+    var res = await fetch(url);
+    var data = await res.json();
+    if (!data.ok) { alert('Could not load quote.'); return; }
+    panel.style.display = 'block';
+    lines.innerHTML = '';
+    var q = data.quote;
+    var li1 = document.createElement('li');
+    li1.textContent = 'Base (' + q.durationMinutes + ' min): ' + fmtNgn(q.base_cents);
+    lines.appendChild(li1);
+    if (q.discount_cents > 0) {
+      var li2 = document.createElement('li');
+      li2.textContent = 'Discount' + (q.discount_tier_label ? ' (' + q.discount_tier_label + ')' : '') + ': −' + fmtNgn(q.discount_cents);
+      lines.appendChild(li2);
+    }
+    totalEl.textContent = 'Total due: ' + fmtNgn(q.total_cents);
+    if (data.bookable) {
+      slotEl.textContent = 'This slot is available. You will have 2 hours to pay after booking.';
+      slotEl.style.color = '';
+      bookForm.style.display = 'block';
+      document.getElementById('book_starts_at').value = starts;
+      document.getElementById('book_duration_minutes').value = String(q.durationMinutes);
+    } else {
+      slotEl.textContent = 'This slot is not available (' + (data.bookableError || 'check hours and conflicts') + ').';
+      slotEl.style.color = '#b42318';
+      bookForm.style.display = 'none';
+    }
+  }
+  btn.addEventListener('click', runQuote);
+  bookForm.addEventListener('submit', function () {
+    document.getElementById('book_purpose').value = document.getElementById('purpose').value;
+  });
+})();
+</script>

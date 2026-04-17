@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Invoice <%= inv.invoice_number %></title>
+  <link rel="stylesheet" href="/css/member-portal.css?v=<%= typeof memberPortalCssV !== 'undefined' ? memberPortalCssV : '' %>" />
+</head>
+<body style="padding:2rem;background:var(--bg);font-family:var(--font);color:var(--text);">
+  <div class="card" style="max-width:640px;">
+    <h1 class="page-title">Invoice</h1>
+    <p><strong><%= inv.invoice_number %></strong> · <span class="badge"><%= inv.status %></span></p>
+    <p>Bill to: <strong><%= inv.full_name %></strong><br/><%= inv.email %></p>
+    <p>Due: <%= formatDate(inv.due_date) %></p>
+    <% if (invoiceLinks && invoiceLinks.length) { %>
+      <p><strong>Linked services</strong></p>
+      <ul style="margin:0 0 12px;padding-left:18px;font-size:14px;">
+        <% invoiceLinks.forEach(function (l) { %>
+          <li><%= l.service_name %> — <%= l.sr_title || '' %> (<%= formatNgn(l.amount_cents) %>)</li>
+        <% }); %>
+      </ul>
+    <% } %>
+    <% if (roomBooking) { %>
+      <p><strong>Meeting room</strong>: <%= roomBooking.room_name %> · <%= roomBooking.booking_reference %> · <%= roomBooking.status %></p>
+    <% } %>
+    <table class="data" style="width:100%;margin-top:16px;">
+      <thead><tr><th>Description</th><th style="text-align:right;">Amount</th></tr></thead>
+      <tbody>
+        <% items.forEach(function (it) { %>
+          <tr><td><%= it.description %></td><td style="text-align:right;"><%= formatNgn(it.amount_cents) %></td></tr>
+        <% }); %>
+      </tbody>
+      <tfoot><tr><th>Total</th><th style="text-align:right;"><%= formatNgn(inv.total_cents) %></th></tr></tfoot>
+    </table>
+    <% if (inv.notes) { %><p style="margin-top:16px;font-size:14px;"><strong>Notes</strong><br/><%= inv.notes %></p><% } %>
+    <p style="margin-top:20px;"><button type="button" class="btn btn-primary" onclick="window.print()">Print</button></p>
+  </div>
+</body>
+</html>

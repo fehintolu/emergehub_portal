@@ -1,0 +1,77 @@
+<p class="page-lead anim anim-2" style="margin-top:0;">
+  <a href="/admin/catalog" class="section-link">← Catalogue</a>
+  · <a href="/admin/catalog/<%= svc.id %>/edit" class="section-link">Edit service</a>
+</p>
+<% if (svc.booking_mode !== 'plan_booking') { %>
+  <div class="alert alert-error anim anim-2">This service is still in <strong>request</strong> mode. Switch it to <strong>Bookable on My Workspace</strong> under Edit service so members can pick a plan here.</div>
+<% } %>
+
+<% if (msg === 'created') { %><div class="alert alert-success anim anim-2">Plan added.</div><% } %>
+<% if (msg === 'updated') { %><div class="alert alert-success anim anim-2">Plan saved.</div><% } %>
+<% if (msg === 'deleted') { %><div class="alert alert-success anim anim-2">Plan removed.</div><% } %>
+<% if (err === '1') { %><div class="alert alert-error anim anim-2">Title is required.</div><% } %>
+
+<div class="card anim anim-2" style="margin-bottom:20px;">
+  <h3 style="margin-top:0;">New plan</h3>
+  <p class="page-lead">Each plan has its own title, description, and price (shown to members on My Workspace). Duration is optional: when set, access dates are applied after the linked invoice is paid.</p>
+  <form method="post" action="/admin/catalog/<%= svc.id %>/plans/new">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+    <div class="form-row"><label>Title</label><input type="text" name="title" required /></div>
+    <div class="form-row"><label>Description</label><textarea name="description" rows="3"></textarea></div>
+    <div class="form-row"><label>Price (₦)</label><input type="number" name="price_ngn" min="0" step="1" required /></div>
+    <div class="form-row">
+      <label>Included access (optional)</label>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+        <input type="number" name="duration_value" min="1" step="1" placeholder="e.g. 1" style="max-width:120px;" />
+        <select name="duration_unit" style="max-width:160px;">
+          <option value="">— none —</option>
+          <option value="hour">hour(s)</option>
+          <option value="day">day(s)</option>
+          <option value="month">month(s)</option>
+        </select>
+      </div>
+      <small style="display:block;margin-top:6px;color:var(--text-secondary);">Leave blank for services with no timed access window.</small>
+    </div>
+    <div class="form-row"><label>Sort order</label><input type="number" name="sort_order" min="0" step="1" value="0" /></div>
+    <div class="form-row"><label><input type="checkbox" name="active" value="1" checked /> Active</label></div>
+    <button type="submit" class="btn btn-primary">Add plan</button>
+  </form>
+</div>
+
+<% plans.forEach(function (p) { %>
+  <% var ngn = Math.round(Number(p.price_cents || 0) / 100); %>
+  <% var duSel = String(p.duration_unit || '').toLowerCase(); %>
+  <div class="card anim anim-3" style="margin-bottom:16px;">
+    <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;align-items:center;">
+      <strong><%= p.title %></strong>
+      <% if (!p.active) { %><span class="badge">Inactive</span><% } %>
+    </div>
+    <form method="post" action="/admin/catalog/<%= svc.id %>/plans/<%= p.id %>/edit" style="margin-top:12px;">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+      <div class="form-row"><label>Title</label><input type="text" name="title" required value="<%= p.title %>" /></div>
+      <div class="form-row"><label>Description</label><textarea name="description" rows="3"><%= p.description || '' %></textarea></div>
+      <div class="form-row"><label>Price (₦)</label><input type="number" name="price_ngn" min="0" step="1" value="<%= ngn %>" /></div>
+      <div class="form-row">
+        <label>Included access (optional)</label>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+          <input type="number" name="duration_value" min="1" step="1" value="<%= p.duration_value ? Number(p.duration_value) : '' %>" placeholder="—" style="max-width:120px;" />
+          <select name="duration_unit" style="max-width:160px;">
+            <option value="" <%= !duSel ? 'selected' : '' %>>— none —</option>
+            <option value="hour" <%= duSel === 'hour' ? 'selected' : '' %>>hour(s)</option>
+            <option value="day" <%= duSel === 'day' ? 'selected' : '' %>>day(s)</option>
+            <option value="month" <%= duSel === 'month' ? 'selected' : '' %>>month(s)</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row"><label>Sort</label><input type="number" name="sort_order" min="0" step="1" value="<%= p.sort_order %>" /></div>
+      <div class="form-row"><label><input type="checkbox" name="active" value="1" <%= p.active ? 'checked' : '' %> /> Active</label></div>
+      <p style="display:flex;flex-wrap:wrap;gap:10px;">
+        <button type="submit" class="btn btn-primary">Save</button>
+      </p>
+    </form>
+    <form method="post" action="/admin/catalog/<%= svc.id %>/plans/<%= p.id %>/delete" onsubmit="return confirm('Remove this plan?');">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+      <button type="submit" class="btn btn-secondary" style="border-color:var(--red);color:var(--red);">Delete plan</button>
+    </form>
+  </div>
+<% }); %>
