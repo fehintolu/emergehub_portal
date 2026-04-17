@@ -658,7 +658,7 @@ router.get('/billing', async (req, res) => {
         `SELECT isl.*, sr.title AS sr_title, sv.name AS service_name
          FROM invoice_service_links isl
          LEFT JOIN service_requests sr ON sr.id = isl.service_request_id AND sr.deleted_at IS NULL
-         LEFT JOIN services sv ON sv.id = sr.service_id AND sv.deleted_at IS NULL
+         LEFT JOIN services sv ON sv.id = sr.service_id
          WHERE isl.invoice_id = ANY($1::uuid[]) AND isl.deleted_at IS NULL`,
         [ids]
       );
@@ -698,33 +698,67 @@ router.get('/billing', async (req, res) => {
     );
     historyRows = Array.isArray(history.rows) ? history.rows : [];
   } catch (e) {
-    console.error('billing payments history', e);
+    if (e && e.code === '42703') {
+      try {
+        const { rows } = await pool.query(
+          `SELECT p.*, i.invoice_number, i.notes
+           FROM payments p
+           JOIN invoices i ON i.id = p.invoice_id
+           WHERE p.member_id = $1
+           ORDER BY p.created_at DESC LIMIT 100`,
+          [m.id]
+        );
+        historyRows = Array.isArray(rows) ? rows : [];
+      } catch (e2) {
+        console.error('billing payments history (no deleted_at)', e2.message);
+      }
+    } else {
+      console.error('billing payments history', e.message);
+    }
   }
-  const bankName = await getSetting('bank_name');
-  const accountName = await getSetting('account_name');
-  const accountNumber = await getSetting('account_number');
-  const notifCount = await unreadCount(m.id);
+  let bankName = '';
+  let accountName = '';
+  let accountNumber = '';
+  try {
+    bankName = await getSetting('bank_name');
+    accountName = await getSetting('account_name');
+    accountNumber = await getSetting('account_number');
+  } catch (e) {
+    console.error('billing portal_settings', e.message);
+  }
+  let notifCount = 0;
+  try {
+    notifCount = await unreadCount(m.id);
+  } catch (e) {
+    console.error('billing unreadCount', e.message);
+  }
   const invoiceFocus = isUuidString(req.query.invoice) ? req.query.invoice : null;
   const bookedBanner = req.query.booked === '1';
   const bookingRef =
     typeof req.query.ref === 'string' && req.query.ref.length <= 80 ? req.query.ref : null;
-  res.render('member/billing', {
-    layout: 'layouts/member',
-    title: 'Payments',
-    outstanding: invRows,
-    invExtras,
-    history: historyRows,
-    formatNgn,
-    formatDate,
-    bankName,
-    accountName,
-    accountNumber,
-    baseUrl: process.env.BASE_URL || '',
-    notifCount,
-    invoiceFocus,
-    bookedBanner,
-    bookingRef,
-  });
+  try {
+    res.render('member/billing', {
+      layout: 'layouts/member',
+      title: 'Payments',
+      outstanding: invRows,
+      invExtras,
+      history: historyRows,
+      formatNgn,
+      formatDate,
+      formatDateTime,
+      bankName,
+      accountName,
+      accountNumber,
+      baseUrl: process.env.BASE_URL || '',
+      notifCount,
+      invoiceFocus,
+      bookedBanner,
+      bookingRef,
+    });
+  } catch (e) {
+    console.error('billing render', e);
+    return res.status(500).send('Could not load billing page. Please try again.');
+  }
 });
 
 router.post('/billing/pay/init', requireValidCsrf, async (req, res) => {

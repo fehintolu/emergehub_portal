@@ -199,6 +199,7 @@ const statements = [
     updated_at timestamptz NOT NULL DEFAULT now(),
     deleted_at timestamptz
   );`,
+  `ALTER TABLE payments ADD COLUMN IF NOT EXISTS deleted_at timestamptz;`,
 
   `CREATE TABLE IF NOT EXISTS service_request_updates (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -264,6 +265,7 @@ const statements = [
     updated_at timestamptz NOT NULL DEFAULT now(),
     deleted_at timestamptz
   );`,
+  `ALTER TABLE member_notifications ADD COLUMN IF NOT EXISTS deleted_at timestamptz;`,
 
   `CREATE TABLE IF NOT EXISTS portal_settings (
     key text PRIMARY KEY,
@@ -298,6 +300,7 @@ const statements = [
 
   `ALTER TABLE services ADD COLUMN IF NOT EXISTS portal_active boolean NOT NULL DEFAULT true;`,
   `ALTER TABLE services ADD COLUMN IF NOT EXISTS booking_mode text NOT NULL DEFAULT 'request';`,
+  `ALTER TABLE services ADD COLUMN IF NOT EXISTS deleted_at timestamptz;`,
 
   `CREATE TABLE IF NOT EXISTS service_plans (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
