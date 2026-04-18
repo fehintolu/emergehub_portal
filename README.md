@@ -31,6 +31,9 @@ journalctl -u emergehub-portal -f
 
 # Database schema (idempotent)
 cd /apps/emergehub-portal && npm run setup-db
+
+# Official catalog / room rates / capacity seed (idempotent; safe to re-run)
+npm run seed-prices
 ```
 
 ### Meeting rooms (legacy data)
@@ -39,9 +42,18 @@ Older **`meeting_room_bookings`** rows (workspace JSON room list) are unchanged.
 
 ### Background jobs (cron)
 
-In-process jobs (room payment expiry, 30‑minute payment warnings, service-end reminders) run when **`ENABLE_CRON=1`** is set in the environment. Leave it unset in local dev to avoid duplicate schedulers if you run multiple `node server.js` processes. Production: set **`ENABLE_CRON=1`** on a **single** app instance (or use an external scheduler instead).
+In-process jobs run when **`ENABLE_CRON=1`** is set in the environment. Leave it unset in local dev to avoid duplicate schedulers if you run multiple `node server.js` processes. Production: set **`ENABLE_CRON=1`** on a **single** app instance (or use an external scheduler instead).
 
-Optional hub timezone for availability checks: **`PORTAL_TZ`** (default **`Africa/Lagos`**).
+When enabled, the scheduler also runs:
+
+- **Every 15 minutes:** pending meeting-room booking expiry (releases reserved plan credits) and payment nudges.
+- **Daily 08:05:** service-end reminders (existing).
+- **1st of month 00:00 (server clock):** meeting credit ledger reset for eligible members.
+- **Daily 00:15:** end prior daily-access seat assignments and trigger waitlist offers.
+- **Daily 08:30:** reminders for space assignments ending within 7 days.
+- **Daily 12:00:** expire stale waitlist offers and notify the next member.
+
+**`PORTAL_TZ`** (default **`Africa/Lagos`**) is used for hub-local date logic in jobs and availability; cron times follow the **server’s system timezone** unless you run a dedicated external scheduler aligned to hub time.
 
 ## Paystack
 

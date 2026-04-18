@@ -1,27 +1,160 @@
-<div class="card-grid">
-  <div class="card stat-card"><span>Members</span><strong><%= stats.members %></strong></div>
-  <div class="card stat-card"><span>Active plans</span><strong><%= stats.activePlans %></strong></div>
-  <div class="card stat-card"><span>Pending service requests</span><strong><%= stats.pendingSvc %></strong></div>
-  <div class="card stat-card"><span>Unpaid invoices total</span><strong><%= formatNgn(stats.unpaidCents) %></strong></div>
-  <div class="card stat-card"><span>Open tickets</span><strong><%= stats.openTickets %></strong></div>
+<!-- portal-admin-dash-v2 -->
+<div class="card anim anim-1" style="margin-bottom:20px;">
+  <div
+    class="admin-dash-stat-grid"
+    role="list"
+    style="display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:14px;"
+  >
+    <div
+      class="admin-dash-stat-tile"
+      role="listitem"
+      style="border:1px solid #ececec;border-radius:10px;padding:16px 18px 14px;background:#f7f7f8;min-height:88px;display:flex;flex-direction:column;justify-content:center;"
+    >
+      <div class="stat-label">Members</div>
+      <div class="stat-value-row">
+        <div class="stat-value"><%= stats.members %></div>
+      </div>
+    </div>
+    <div
+      class="admin-dash-stat-tile"
+      role="listitem"
+      style="border:1px solid #ececec;border-radius:10px;padding:16px 18px 14px;background:#f7f7f8;min-height:88px;display:flex;flex-direction:column;justify-content:center;"
+    >
+      <div class="stat-label">Active plans</div>
+      <div class="stat-value-row">
+        <div class="stat-value"><%= stats.activePlans %></div>
+      </div>
+    </div>
+    <div
+      class="admin-dash-stat-tile"
+      role="listitem"
+      style="border:1px solid #ececec;border-radius:10px;padding:16px 18px 14px;background:#f7f7f8;min-height:88px;display:flex;flex-direction:column;justify-content:center;"
+    >
+      <div class="stat-label">Pending service requests</div>
+      <div class="stat-value-row">
+        <div class="stat-value"><%= stats.pendingSvc %></div>
+      </div>
+    </div>
+    <div
+      class="admin-dash-stat-tile"
+      role="listitem"
+      style="border:1px solid #ececec;border-radius:10px;padding:16px 18px 14px;background:#f7f7f8;min-height:88px;display:flex;flex-direction:column;justify-content:center;"
+    >
+      <div class="stat-label">Unpaid invoices total</div>
+      <div class="stat-value-row">
+        <div class="stat-value" style="font-size:22px;letter-spacing:-0.5px;"><%= formatNgn(stats.unpaidCents) %></div>
+      </div>
+    </div>
+    <div
+      class="admin-dash-stat-tile"
+      role="listitem"
+      style="border:1px solid #ececec;border-radius:10px;padding:16px 18px 14px;background:#f7f7f8;min-height:88px;display:flex;flex-direction:column;justify-content:center;"
+    >
+      <div class="stat-label">Open tickets</div>
+      <div class="stat-value-row">
+        <div class="stat-value"><%= stats.openTickets %></div>
+      </div>
+    </div>
+  </div>
 </div>
 
-<h3>New service requests</h3>
-<ul><% queueNewSvc.forEach(function (r) { %>
-  <li><a href="/admin/service-requests/<%= r.id %>"><%= r.service_name %> — <%= r.full_name %></a> · <%= formatDateTime(r.created_at) %></li>
-<% }); %></ul>
+<div class="member-two-col">
+  <div class="card anim anim-2">
+    <div class="section-header">
+      <span class="section-title">New service requests</span>
+      <a class="section-link" href="/admin/service-requests">View all</a>
+    </div>
+    <% if (!queueNewSvc.length) { %>
+      <div class="activity-empty">No new submissions right now.</div>
+    <% } else { %>
+      <% queueNewSvc.forEach(function (r) { %>
+        <div class="activity-row">
+          <span class="activity-dot orange" aria-hidden="true"></span>
+          <div class="activity-body">
+            <a class="activity-title admin-dash-queue-link" href="/admin/service-requests/<%= r.id %>"><%= r.service_name %></a>
+            <div class="activity-meta"><%= r.full_name %> · <%= formatDateTime(r.created_at) %></div>
+          </div>
+        </div>
+      <% }); %>
+    <% } %>
+  </div>
 
-<h3>Awaiting payment confirmation</h3>
-<ul><% queueBank.forEach(function (i) { %>
-  <li><a href="/admin/invoices/<%= i.id %>"><%= i.invoice_number %> — <%= i.full_name %></a></li>
-<% }); %></ul>
+  <div class="card anim anim-2">
+    <div class="section-header">
+      <span class="section-title">Awaiting payment confirmation</span>
+      <a class="section-link" href="/admin/invoices">Invoices</a>
+    </div>
+    <% if (!queueBank.length) { %>
+      <div class="activity-empty">No invoices awaiting bank proof review.</div>
+    <% } else { %>
+      <% queueBank.forEach(function (i) { %>
+        <div class="activity-row">
+          <span class="activity-dot blue" aria-hidden="true"></span>
+          <div class="activity-body">
+            <a class="activity-title admin-dash-queue-link" href="/admin/invoices/<%= i.id %>"><%= i.invoice_number %></a>
+            <div class="activity-meta"><%= i.full_name %></div>
+          </div>
+        </div>
+      <% }); %>
+    <% } %>
+  </div>
 
-<h3>Open support tickets</h3>
-<ul><% queueTickets.forEach(function (t) { %>
-  <li><a href="/admin/support/<%= t.id %>"><%= t.subject %> — <%= t.full_name %></a></li>
-<% }); %></ul>
+  <div class="card anim anim-3">
+    <div class="section-header">
+      <span class="section-title">Open support tickets</span>
+      <a class="section-link" href="/admin/support">Support</a>
+    </div>
+    <% if (!queueTickets.length) { %>
+      <div class="activity-empty">No open tickets in this queue.</div>
+    <% } else { %>
+      <% queueTickets.forEach(function (t) { %>
+        <div class="activity-row">
+          <span class="activity-dot green" aria-hidden="true"></span>
+          <div class="activity-body">
+            <a class="activity-title admin-dash-queue-link" href="/admin/support/<%= t.id %>"><%= t.subject %></a>
+            <div class="activity-meta"><%= t.full_name %></div>
+          </div>
+        </div>
+      <% }); %>
+    <% } %>
+  </div>
 
-<h3>Pending room bookings</h3>
-<ul><% queueRooms.forEach(function (b) { %>
-  <li><a href="/admin/rooms/legacy"><%= b.room_name %> — <%= b.full_name %> · <%= formatDateTime(b.starts_at) %></a></li>
-<% }); %></ul>
+  <div class="card anim anim-3">
+    <div class="section-header">
+      <span class="section-title">Pending room bookings</span>
+      <a class="section-link" href="/admin/meeting-rooms/bookings">Bookings</a>
+    </div>
+    <% if (!queueRooms.length) { %>
+      <div class="activity-empty">No pending meeting room bookings.</div>
+    <% } else { %>
+      <% queueRooms.forEach(function (b) { %>
+        <div class="activity-row">
+          <span class="activity-dot orange" aria-hidden="true"></span>
+          <div class="activity-body">
+            <a class="activity-title admin-dash-queue-link" href="/admin/meeting-rooms/bookings"><%= b.room_name %></a>
+            <div class="activity-meta"><%= b.full_name %> · <%= formatDateTime(b.starts_at) %></div>
+          </div>
+        </div>
+      <% }); %>
+    <% } %>
+  </div>
+</div>
+
+<% if (typeof queueUnassignedSpace !== 'undefined' && queueUnassignedSpace.length) { %>
+<div class="card anim anim-3" style="margin-top:20px;border-left:4px solid var(--orange, #ea580c);">
+  <div class="section-header">
+    <span class="section-title">Paid capacity plans — members without a seat</span>
+    <a class="section-link" href="/admin/space-utilization">Space utilization</a>
+  </div>
+  <% queueUnassignedSpace.forEach(function (r) { %>
+    <div class="activity-row">
+      <span class="activity-dot orange" aria-hidden="true"></span>
+      <div class="activity-body">
+        <a class="activity-title admin-dash-queue-link" href="/admin/members/<%= r.member_id %>"><%= r.full_name %></a>
+        <div class="activity-meta"><%= r.service_name %> — <%= r.plan_title %> · <%= r.email %></div>
+        <div class="activity-meta"><a class="section-link" href="/admin/service-requests/<%= r.sr_id %>">Service request</a></div>
+      </div>
+    </div>
+  <% }); %>
+</div>
+<% } %>

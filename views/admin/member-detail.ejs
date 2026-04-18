@@ -1,13 +1,28 @@
-<h2><%= m.full_name %></h2>
-<p><%= m.email %> · <%= m.phone %></p>
-<p>Joined <%= formatDate(m.created_at) %> <% if (m.suspended_at) { %><span class="badge badge-warn">Suspended</span><% } %></p>
+<% if (typeof query !== 'undefined' && query.msg === 'credits') { %>
+  <div class="alert alert-success anim anim-1">Meeting credits updated.</div>
+<% } %>
+<% if (typeof query !== 'undefined' && query.err === 'credits') { %>
+  <div class="alert alert-error anim anim-1">Enter a non-zero adjustment for granted or used minutes.</div>
+<% } %>
+<% if (typeof query !== 'undefined' && query.err === 'credits_save') { %>
+  <div class="alert alert-error anim anim-1">Could not save credit adjustment.</div>
+<% } %>
 
-<form method="post" action="/admin/members/<%= m.id %>/note">
-  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-  <label>Internal notes</label>
-  <textarea name="internal_notes"><%= m.internal_notes || '' %></textarea>
-  <button type="submit" class="btn btn-secondary">Save notes</button>
-</form>
+<div class="card anim anim-1">
+  <p class="page-lead" style="margin:0 0 8px;"><%= m.email %> · <%= m.phone %></p>
+  <p class="page-lead" style="margin:0;">Joined <%= formatDate(m.created_at) %> <% if (m.suspended_at) { %><span class="badge badge-warn">Suspended</span><% } %></p>
+</div>
+
+<div class="card anim anim-2">
+  <div class="section-header">
+    <span class="section-title">Internal notes</span>
+  </div>
+  <form method="post" action="/admin/members/<%= m.id %>/note">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+    <div class="form-row"><label>Notes</label><textarea name="internal_notes"><%= m.internal_notes || '' %></textarea></div>
+    <button type="submit" class="btn btn-secondary">Save notes</button>
+  </form>
+</div>
 
 <div class="cta-row">
   <% if (!m.suspended_at) { %>
@@ -23,49 +38,119 @@
   <% } %>
 </div>
 
-<h3>Plan</h3>
-<ul><% plans.forEach(function (p) { %>
-  <li><%= p.name %> — <%= p.status %> · <%= formatDate(p.started_at) %> → <%= p.renewal_at ? formatDate(p.renewal_at) : '—' %></li>
-<% }); %></ul>
-<form method="post" action="/admin/members/<%= m.id %>/plan">
-  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-  <select name="tier_id"><% tiers.forEach(function (t) { %><option value="<%= t.id %>"><%= t.name %></option><% }); %></select>
-  <input type="date" name="started_at" />
-  <input type="date" name="renewal_at" />
-  <select name="status"><option>active</option><option>suspended</option><option>pending_renewal</option></select>
-  <button type="submit" class="btn btn-primary">Set plan</button>
-</form>
+<div class="card anim anim-2">
+  <div class="section-header">
+    <span class="section-title">Meeting room credits (ledger)</span>
+  </div>
+  <% if (creditLedger && creditLedger.length) { %>
+    <ul class="plain-list" style="margin:0 0 16px;">
+      <% creditLedger.forEach(function (row) { %>
+        <li><%= formatDate(row.period_month) %> — granted <%= row.granted_minutes %>, used <%= row.used_minutes %></li>
+      <% }); %>
+    </ul>
+  <% } else { %>
+    <p class="page-lead" style="margin:0 0 16px;">No ledger rows yet (created when a member has an allowance and books or on monthly reset).</p>
+  <% } %>
+  <form method="post" action="/admin/members/<%= m.id %>/meeting-credits">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+    <div class="form-row"><label>Month (YYYY-MM)</label><input type="month" name="period_month" /></div>
+    <div class="form-row"><label>Δ granted minutes</label><input type="number" name="delta_granted" value="0" step="1" /></div>
+    <div class="form-row"><label>Δ used minutes</label><input type="number" name="delta_used" value="0" step="1" /></div>
+    <p class="page-lead" style="font-size:12px;margin:0 0 12px;">Leave month blank for the current hub month. <strong>Δ granted</strong> adds courtesy minutes to the allowance. <strong>Δ used</strong> adjusts the consumed column (can be negative to undo an error).</p>
+    <button type="submit" class="btn btn-secondary">Apply adjustment</button>
+  </form>
+</div>
 
-<h3>Service requests</h3>
-<ul><% svc.forEach(function (r) { %>
-  <li><a href="/admin/service-requests/<%= r.id %>"><%= r.service_name %></a> — <%= r.status %></li>
-<% }); %></ul>
+<div class="card anim anim-2">
+  <div class="section-header">
+    <span class="section-title">Plan</span>
+  </div>
+  <% if (plans.length) { %>
+    <ul class="plain-list"><% plans.forEach(function (p) { %>
+      <li><%= p.name %> — <%= p.status %> · <%= formatDate(p.started_at) %> → <%= p.renewal_at ? formatDate(p.renewal_at) : '—' %></li>
+    <% }); %></ul>
+  <% } else { %>
+    <p class="page-lead" style="margin:0 0 16px;">No plans yet.</p>
+  <% } %>
+  <form method="post" action="/admin/members/<%= m.id %>/plan">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+    <div class="form-row"><label>Tier</label><select name="tier_id"><% tiers.forEach(function (t) { %><option value="<%= t.id %>"><%= t.name %></option><% }); %></select></div>
+    <div class="form-row"><label>Started</label><input type="date" name="started_at" /></div>
+    <div class="form-row"><label>Renewal</label><input type="date" name="renewal_at" /></div>
+    <div class="form-row"><label>Status</label><select name="status"><option>active</option><option>suspended</option><option>pending_renewal</option></select></div>
+    <button type="submit" class="btn btn-primary">Set plan</button>
+  </form>
+</div>
 
-<h3>Invoices</h3>
-<ul><% inv.forEach(function (i) { %>
-  <li><a href="/admin/invoices/<%= i.id %>"><%= i.invoice_number %></a> — <%= formatNgn(i.total_cents) %> — <%= i.status %></li>
-<% }); %></ul>
+<div class="card anim anim-2">
+  <div class="section-header">
+    <span class="section-title">Service requests</span>
+    <a class="section-link" href="/admin/service-requests">View all</a>
+  </div>
+  <% if (svc.length) { %>
+    <ul class="plain-list"><% svc.forEach(function (r) { %>
+      <li><a href="/admin/service-requests/<%= r.id %>"><%= r.service_name %></a> — <%= r.status %></li>
+    <% }); %></ul>
+  <% } else { %>
+    <div class="activity-empty">None yet.</div>
+  <% } %>
+</div>
 
-<h3>Documents</h3>
-<form method="post" action="/admin/members/<%= m.id %>/documents" enctype="multipart/form-data">
-  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-  <input type="file" name="file" required accept=".pdf,.jpg,.jpeg,.png,.docx" />
-  <button type="submit" class="btn btn-secondary">Upload to member</button>
-</form>
-<ul><% docs.forEach(function (d) { %>
-  <li><a href="/admin/documents/download/<%= d.id %>"><%= d.original_name %></a></li>
-<% }); %></ul>
+<div class="card anim anim-2">
+  <div class="section-header">
+    <span class="section-title">Invoices</span>
+    <a class="section-link" href="/admin/invoices">View all</a>
+  </div>
+  <% if (inv.length) { %>
+    <ul class="plain-list"><% inv.forEach(function (i) { %>
+      <li><a href="/admin/invoices/<%= i.id %>"><%= i.invoice_number %></a> — <%= formatNgn(i.total_cents) %> — <%= i.status %></li>
+    <% }); %></ul>
+  <% } else { %>
+    <div class="activity-empty">None yet.</div>
+  <% } %>
+</div>
 
-<h3>Support tickets</h3>
-<ul><% tickets.forEach(function (t) { %>
-  <li><a href="/admin/support/<%= t.id %>"><%= t.subject %></a> — <%= t.status %></li>
-<% }); %></ul>
+<div class="card anim anim-2">
+  <div class="section-header">
+    <span class="section-title">Documents</span>
+  </div>
+  <form method="post" action="/admin/members/<%= m.id %>/documents" enctype="multipart/form-data">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+    <div class="form-row"><label>File</label><input type="file" name="file" required accept=".pdf,.jpg,.jpeg,.png,.docx" /></div>
+    <button type="submit" class="btn btn-secondary">Upload to member</button>
+  </form>
+  <% if (docs.length) { %>
+    <ul class="plain-list" style="margin-top:16px;"><% docs.forEach(function (d) { %>
+      <li><a href="/admin/documents/download/<%= d.id %>"><%= d.original_name %></a></li>
+    <% }); %></ul>
+  <% } else { %>
+    <p class="page-lead" style="margin:12px 0 0;">No documents.</p>
+  <% } %>
+</div>
 
-<h3>Notify member</h3>
-<form method="post" action="/admin/members/<%= m.id %>/notify">
-  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-  <input type="text" name="title" placeholder="Title" required />
-  <textarea name="message" placeholder="Message" required></textarea>
-  <input type="text" name="link_url" placeholder="Optional link path e.g. /billing" />
-  <button type="submit" class="btn btn-primary">Send</button>
-</form>
+<div class="card anim anim-2">
+  <div class="section-header">
+    <span class="section-title">Support tickets</span>
+    <a class="section-link" href="/admin/support">Support</a>
+  </div>
+  <% if (tickets.length) { %>
+    <ul class="plain-list"><% tickets.forEach(function (t) { %>
+      <li><a href="/admin/support/<%= t.id %>"><%= t.subject %></a> — <%= t.status %></li>
+    <% }); %></ul>
+  <% } else { %>
+    <div class="activity-empty">None yet.</div>
+  <% } %>
+</div>
+
+<div class="card anim anim-2">
+  <div class="section-header">
+    <span class="section-title">Notify member</span>
+  </div>
+  <form method="post" action="/admin/members/<%= m.id %>/notify">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+    <div class="form-row"><label>Title</label><input type="text" name="title" placeholder="Title" required /></div>
+    <div class="form-row"><label>Message</label><textarea name="message" placeholder="Message" required></textarea></div>
+    <div class="form-row"><label>Optional link path</label><input type="text" name="link_url" placeholder="e.g. /billing" /></div>
+    <button type="submit" class="btn btn-primary">Send</button>
+  </form>
+</div>

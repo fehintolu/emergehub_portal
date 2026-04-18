@@ -7,8 +7,7 @@
 <% } %>
 
 <div class="card" style="margin-bottom:16px;">
-  <h2 class="page-title" style="margin-top:0;"><%= room.name %></h2>
-  <% if (room.description) { %><p class="page-lead"><%= room.description %></p><% } %>
+  <% if (room.description) { %><p class="page-lead" style="margin-top:0;"><%= room.description %></p><% } %>
   <p style="margin:0;">Hourly rate: <strong><%= formatNgn(room.hourly_rate_cents) %></strong></p>
 </div>
 
@@ -52,6 +51,7 @@
           <p class="mrb-price-line" id="mrb-price-duration">Duration: —</p>
           <p class="mrb-price-line" id="mrb-price-base">Base: —</p>
           <p class="mrb-price-line" id="mrb-price-discount" style="display:none;">Discount: —</p>
+          <p class="mrb-price-line" id="mrb-price-credits" style="display:none;">Plan credits: —</p>
           <p class="mrb-price-total" id="mrb-price-total">Total: —</p>
           <p class="page-lead mrb-nudge" id="mrb-nudge" style="display:none;margin-top:12px;"></p>
         </div>
@@ -164,6 +164,7 @@
   var tiers = <%- JSON.stringify(tiers || []) %>;
   var minBookDate = <%- JSON.stringify(String(typeof minBookDate !== 'undefined' ? minBookDate : '')) %>;
   var tzName = <%- JSON.stringify(String(typeof portalTzName !== 'undefined' ? portalTzName : 'Africa/Lagos')) %>;
+  var consumesCredits = <%- JSON.stringify(room.consumes_plan_credits !== false) %>;
 
   var monthCache = {};
   var dayCache = {};
@@ -177,6 +178,8 @@
   var daySlots = [];
   var anchorIdx = null;
   var rangeEndIdx = null;
+  var quoteSeq = 0;
+  var lastSrv = null;
 
   function pad2(n) { return String(n).padStart(2, '0'); }
   function fmtNgn(cents) {
@@ -251,6 +254,7 @@
     priceDur: document.getElementById('mrb-price-duration'),
     priceBase: document.getElementById('mrb-price-base'),
     priceDisc: document.getElementById('mrb-price-discount'),
+    priceCredits: document.getElementById('mrb-price-credits'),
     priceTot: document.getElementById('mrb-price-total'),
     nudge: document.getElementById('mrb-nudge'),
     btn2: document.getElementById('mrb-confirm2'),
@@ -426,12 +430,14 @@
       el.priceDur.textContent = 'Duration: —';
       el.priceBase.textContent = 'Base: —';
       el.priceDisc.style.display = 'none';
+      el.priceCredits.style.display = 'none';
       el.priceTot.textContent = 'Total: —';
       el.nudge.style.display = 'none';
       el.btn2.disabled = true;
       el.mbtn.disabled = true;
       el.msum.textContent = 'Select a time range';
       el.mbreak.innerHTML = '';
+      lastSrv = null;
       return;
     }
     el.priceDur.textContent = 'Duration: ' + q.durationMinutes + ' min';
@@ -442,6 +448,8 @@
     } else {
       el.priceDisc.style.display = 'none';
     }
+    el.priceCredits.style.display = 'none';
+    el.priceCredits.textContent = '';
     el.priceTot.textContent = 'Total: ' + fmtNgn(q.total_cents);
     var n = nextTierNudge(q.durationMinutes, q);
     if (n) {
@@ -454,6 +462,70 @@
     el.mbtn.disabled = false;
     el.msum.textContent = q.durationMinutes + ' min · ' + fmtNgn(q.total_cents);
     el.mbreak.innerHTML = '<p>' + el.priceDur.textContent + '</p><p>' + el.priceBase.textContent + '</p>' + (q.discount_cents > 0 ? '<p>' + el.priceDisc.textContent + '</p>' : '') + '<p><strong>' + el.priceTot.textContent + '</strong></p>' + (n ? '<p class="page-lead" style="margin-top:8px;">' + n + '</p>' : '');
+
+    if (consumesCredits) {
+      quoteSeq += 1;
+      var mySeq = quoteSeq;
+      var lo = Math.min(anchorIdx, rangeEndIdx);
+      var startIso = daySlots[lo].starts_at;
+      var dm = (Math.abs(rangeEndIdx - anchorIdx) + 1) * 30;
+      fetch(
+        '/meeting-rooms/' +
+          roomId +
+          '/quote?starts_at=' +
+          encodeURIComponent(startIso) +
+          '&duration_minutes=' +
+          encodeURIComponent(String(dm))
+      )
+        .then(function (r) {
+          return r.json();
+        })
+        .then(function (data) {
+          if (mySeq !== quoteSeq) return;
+          if (!data || !data.ok || !data.quote) return;
+          lastSrv = { startIso: startIso, dm: dm, data: data };
+          var cr = data.credits;
+          if (cr && (cr.minutes_applied > 0 || (cr.available_minutes || 0) > 0)) {
+            el.priceCredits.style.display = 'block';
+            if (cr.minutes_applied > 0) {
+              el.priceCredits.textContent =
+                'Plan credits: ' +
+                cr.minutes_applied +
+                ' min applied (~' +
+                fmtNgn(cr.value_cents || 0) +
+                '). You pay: ' +
+                fmtNgn(cr.payable_cents != null ? cr.payable_cents : data.quote.total_cents) +
+                '.';
+            } else {
+              el.priceCredits.textContent =
+                'Plan credits available this month: ' + (cr.available_minutes || 0) + ' min (not applied to this slot yet).';
+            }
+          } else {
+            el.priceCredits.style.display = 'none';
+          }
+          var pay = data.quote.total_cents;
+          if (cr && cr.payable_cents != null) pay = cr.payable_cents;
+          el.priceTot.textContent = 'You pay: ' + fmtNgn(pay) + ' · List price: ' + fmtNgn(data.quote.total_cents);
+          el.msum.textContent = dm + ' min · ' + fmtNgn(pay);
+          el.mbreak.innerHTML =
+            '<p>' +
+            el.priceDur.textContent +
+            '</p><p>' +
+            el.priceBase.textContent +
+            '</p>' +
+            (q.discount_cents > 0 ? '<p>' + el.priceDisc.textContent + '</p>' : '') +
+            (el.priceCredits.style.display === 'block' ? '<p>' + el.priceCredits.textContent + '</p>' : '') +
+            '<p><strong>' +
+            el.priceTot.textContent +
+            '</strong></p>' +
+            (n ? '<p class="page-lead" style="margin-top:8px;">' + n + '</p>' : '');
+        })
+        .catch(function () {
+          if (mySeq !== quoteSeq) return;
+        });
+    } else {
+      lastSrv = null;
+    }
   }
 
   el.tl.addEventListener('click', function (ev) {
@@ -540,12 +612,33 @@
     var endIso = daySlots[hi].ends_at;
     var dm = (hi - lo + 1) * 30;
     var q = computeRoomQuote(dm);
+    var payC = q.total_cents;
+    var creditNote = '';
+    if (
+      lastSrv &&
+      lastSrv.startIso === startIso &&
+      lastSrv.dm === dm &&
+      lastSrv.data &&
+      lastSrv.data.credits &&
+      lastSrv.data.credits.payable_cents != null
+    ) {
+      payC = lastSrv.data.credits.payable_cents;
+      if (lastSrv.data.credits.minutes_applied > 0) {
+        creditNote =
+          '<p>Plan credits: ' +
+          lastSrv.data.credits.minutes_applied +
+          ' min (~' +
+          fmtNgn(lastSrv.data.credits.value_cents || 0) +
+          ')</p>';
+      }
+    }
     el.s3sum.innerHTML =
       '<p><strong>' + roomName.replace(/</g, '') + '</strong></p>' +
       '<p>' + labelDate(selectedDate) + '</p>' +
       '<p>' + labelTime(startIso) + ' – ' + labelTime(endIso) + ' · ' + dm + ' min</p>' +
       '<p>Base ' + fmtNgn(q.base_cents) + (q.discount_cents > 0 ? ' · Discount −' + fmtNgn(q.discount_cents) : '') + '</p>' +
-      '<p><strong>Total ' + fmtNgn(q.total_cents) + '</strong></p>';
+      creditNote +
+      '<p><strong>Pay today ' + fmtNgn(payC) + '</strong> (list ' + fmtNgn(q.total_cents) + ')</p>';
     el.s3b.style.display = 'block';
     el.s3p.style.display = 'block';
     el.purpose.value = '';

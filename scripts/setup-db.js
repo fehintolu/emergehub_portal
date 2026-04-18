@@ -456,6 +456,126 @@ const statements = [
     deleted_at timestamptz
   );`,
   `CREATE INDEX IF NOT EXISTS idx_sr_reminders_due ON service_request_reminders(remind_at) WHERE deleted_at IS NULL AND sent_at IS NULL;`,
+
+  /* Service plans — credits, capacity flags, marketing copy */
+  `ALTER TABLE service_plans ADD COLUMN IF NOT EXISTS monthly_meeting_credit_minutes int NOT NULL DEFAULT 0;`,
+  `ALTER TABLE service_plans ADD COLUMN IF NOT EXISTS weekly_access_sessions int;`,
+  `ALTER TABLE service_plans ADD COLUMN IF NOT EXISTS is_capacity_limited boolean NOT NULL DEFAULT false;`,
+  `ALTER TABLE service_plans ADD COLUMN IF NOT EXISTS plan_kind text;`,
+  `ALTER TABLE service_plans ADD COLUMN IF NOT EXISTS features_json jsonb NOT NULL DEFAULT '{}'::jsonb;`,
+  `ALTER TABLE service_plans ADD COLUMN IF NOT EXISTS plan_slug text;`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_service_plans_plan_slug
+     ON service_plans (service_id, lower(trim(plan_slug))) WHERE deleted_at IS NULL AND plan_slug IS NOT NULL AND trim(plan_slug) <> '';`,
+
+  /* Meeting rooms — full-day rate, credit eligibility, stable seed slug */
+  `ALTER TABLE meeting_rooms ADD COLUMN IF NOT EXISTS full_day_rate_cents bigint;`,
+  `ALTER TABLE meeting_rooms ADD COLUMN IF NOT EXISTS room_product_kind text;`,
+  `ALTER TABLE meeting_rooms ADD COLUMN IF NOT EXISTS consumes_plan_credits boolean NOT NULL DEFAULT true;`,
+  `ALTER TABLE meeting_rooms ADD COLUMN IF NOT EXISTS slug text;`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_meeting_rooms_slug_live
+     ON meeting_rooms (lower(trim(slug))) WHERE deleted_at IS NULL AND slug IS NOT NULL AND trim(slug) <> '';`,
+
+  /* Room bookings — plan credits applied to invoice */
+  `ALTER TABLE room_bookings ADD COLUMN IF NOT EXISTS credit_minutes_applied int NOT NULL DEFAULT 0;`,
+  `ALTER TABLE room_bookings ADD COLUMN IF NOT EXISTS payable_cents bigint NOT NULL DEFAULT 0;`,
+  `ALTER TABLE room_bookings ADD COLUMN IF NOT EXISTS credit_value_cents bigint NOT NULL DEFAULT 0;`,
+  `ALTER TABLE room_bookings ADD COLUMN IF NOT EXISTS credit_period_month date;`,
+
+  `ALTER TABLE member_plans ADD COLUMN IF NOT EXISTS space_unit_id uuid;`,
+
+  `CREATE TABLE IF NOT EXISTS plan_capacity_profiles (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    service_plan_id uuid REFERENCES service_plans(id) ON DELETE CASCADE,
+    membership_tier_id int REFERENCES membership_tiers(id) ON DELETE SET NULL,
+    total_units int NOT NULL DEFAULT 0,
+    auto_assign boolean NOT NULL DEFAULT false,
+    waitlist_enabled boolean NOT NULL DEFAULT true,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    deleted_at timestamptz
+  );`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_plan_capacity_profiles_sp
+     ON plan_capacity_profiles(service_plan_id) WHERE deleted_at IS NULL AND service_plan_id IS NOT NULL;`,
+  `CREATE INDEX IF NOT EXISTS idx_plan_capacity_profiles_tier
+     ON plan_capacity_profiles(membership_tier_id) WHERE deleted_at IS NULL;`,
+
+  `CREATE TABLE IF NOT EXISTS space_units (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    profile_id uuid NOT NULL REFERENCES plan_capacity_profiles(id) ON DELETE CASCADE,
+    label text NOT NULL,
+    location_note text,
+    status text NOT NULL DEFAULT 'available',
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    deleted_at timestamptz
+  );`,
+  `CREATE INDEX IF NOT EXISTS idx_space_units_profile ON space_units(profile_id) WHERE deleted_at IS NULL;`,
+
+  `CREATE TABLE IF NOT EXISTS member_space_assignments (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    unit_id uuid NOT NULL REFERENCES space_units(id) ON DELETE CASCADE,
+    member_id uuid NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+    started_at date NOT NULL,
+    ends_at date,
+    assignment_type text NOT NULL DEFAULT 'ongoing',
+    source_service_request_id uuid REFERENCES service_requests(id) ON DELETE SET NULL,
+    source_invoice_id uuid REFERENCES invoices(id) ON DELETE SET NULL,
+    ended_at timestamptz,
+    ended_reason text,
+    ends_reminder_sent_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    deleted_at timestamptz
+  );`,
+  `CREATE INDEX IF NOT EXISTS idx_msa_unit_open ON member_space_assignments(unit_id) WHERE deleted_at IS NULL AND ended_at IS NULL;`,
+  `CREATE INDEX IF NOT EXISTS idx_msa_member_open ON member_space_assignments(member_id) WHERE deleted_at IS NULL AND ended_at IS NULL;`,
+
+  `CREATE TABLE IF NOT EXISTS plan_waitlist_entries (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    profile_id uuid NOT NULL REFERENCES plan_capacity_profiles(id) ON DELETE CASCADE,
+    member_id uuid NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+    joined_at timestamptz NOT NULL DEFAULT now(),
+    status text NOT NULL DEFAULT 'waiting',
+    offer_expires_at timestamptz,
+    offer_token uuid DEFAULT gen_random_uuid(),
+    sort_key bigint NOT NULL DEFAULT 0,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    deleted_at timestamptz
+  );`,
+  `CREATE INDEX IF NOT EXISTS idx_waitlist_profile_status ON plan_waitlist_entries(profile_id, status) WHERE deleted_at IS NULL;`,
+
+  `CREATE TABLE IF NOT EXISTS member_meeting_credit_ledger (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    member_id uuid NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+    period_month date NOT NULL,
+    granted_minutes int NOT NULL DEFAULT 0,
+    used_minutes int NOT NULL DEFAULT 0,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE(member_id, period_month)
+  );`,
+  `CREATE INDEX IF NOT EXISTS idx_credit_ledger_member_period ON member_meeting_credit_ledger(member_id, period_month);`,
+
+  `CREATE TABLE IF NOT EXISTS meeting_credit_events (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    member_id uuid NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+    period_month date NOT NULL,
+    delta_granted int NOT NULL DEFAULT 0,
+    delta_used int NOT NULL DEFAULT 0,
+    reason text,
+    room_booking_id uuid REFERENCES room_bookings(id) ON DELETE SET NULL,
+    admin_id uuid REFERENCES portal_admin_users(id) ON DELETE SET NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+  );`,
+  `CREATE INDEX IF NOT EXISTS idx_meeting_credit_events_member ON meeting_credit_events(member_id, created_at DESC);`,
+
+  `ALTER TABLE membership_tiers ADD COLUMN IF NOT EXISTS service_plan_id uuid REFERENCES service_plans(id) ON DELETE SET NULL;`,
+  `DO $$ BEGIN
+     ALTER TABLE member_plans
+       ADD CONSTRAINT member_plans_space_unit_id_fkey
+       FOREIGN KEY (space_unit_id) REFERENCES space_units(id) ON DELETE SET NULL;
+   EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
 ];
 
 async function seedAdminAndSettings(client) {

@@ -17,6 +17,7 @@ const memberArea = require('./routes/memberArea');
 const adminLogin = require('./routes/adminLogin');
 const adminMain = require('./routes/adminMain');
 const adminMeetingRooms = require('./routes/adminMeetingRooms');
+const adminCapacity = require('./routes/adminCapacity');
 
 const app = express();
 if (process.env.TRUST_PROXY === '1') {
@@ -34,6 +35,9 @@ function assetMtimeMs(relativePath) {
 /** Bust browser/CDN caches when CSS changes (query string + weak validators). */
 app.locals.memberPortalCssV = String(
   process.env.PORTAL_ASSET_VERSION || assetMtimeMs('public/css/member-portal.css')
+);
+app.locals.adminUiCssV = String(
+  process.env.PORTAL_ASSET_VERSION || assetMtimeMs('public/css/admin-ui.css')
 );
 
 app.set('views', path.join(__dirname, 'views'));
@@ -134,6 +138,7 @@ app.use('/auth', authRoutes);
    guests to /auth/login. */
 app.use('/admin', adminLogin);
 app.use('/admin', adminMeetingRooms);
+app.use('/admin', adminCapacity);
 app.use('/admin', adminMain);
 
 app.use(memberArea);

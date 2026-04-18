@@ -9,6 +9,7 @@ const { requireMember, requireVerifiedEmail } = require('../middleware/memberAut
 const { memberLayoutLocals } = require('../middleware/memberLayoutLocals');
 const { trackMemberSession } = require('../middleware/trackMemberSession');
 const { dashboardStats } = require('../lib/memberStats');
+const { getAvailableCreditMinutes } = require('../lib/meetingCredits');
 const { recentActivityForMember } = require('../lib/activity');
 const { formatNgn, formatDate, formatDateTime } = require('../lib/format');
 const { nextInvoiceNumber } = require('../lib/invoiceNumber');
@@ -58,6 +59,13 @@ const upload = multer({
 
 async function ensureUploadRoot() {
   await fs.mkdir(uploadDir, { recursive: true });
+}
+
+function isUuidMember(s) {
+  return (
+    typeof s === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s)
+  );
 }
 
 router.get('/dashboard', async (req, res) => {
@@ -153,6 +161,70 @@ router.get('/workspace', async (req, res) => {
       return acc;
     }, {});
   }
+
+  const { rows: capRows } = await pool.query(
+    `SELECT p.id AS profile_id, p.service_plan_id, p.total_units, p.waitlist_enabled,
+            (SELECT COUNT(*)::int FROM member_space_assignments msa
+             JOIN space_units su ON su.id = msa.unit_id AND su.deleted_at IS NULL
+             WHERE su.profile_id = p.id AND msa.deleted_at IS NULL AND msa.ended_at IS NULL) AS occupied
+     FROM plan_capacity_profiles p
+     WHERE p.deleted_at IS NULL`
+  );
+  const capacityByPlanId = {};
+  for (const row of capRows) {
+    const cap = Math.max(0, Number(row.total_units) || 0);
+    const occ = Math.max(0, Number(row.occupied) || 0);
+    const full = cap > 0 && occ >= cap;
+    capacityByPlanId[row.service_plan_id] = {
+      profile_id: row.profile_id,
+      total_units: cap,
+      occupied: occ,
+      full,
+      waitlist_enabled: row.waitlist_enabled !== false,
+    };
+  }
+
+  const { rows: wlRows } = await pool.query(
+    `SELECT profile_id, status, offer_expires_at
+     FROM plan_waitlist_entries
+     WHERE member_id = $1::uuid AND deleted_at IS NULL AND status IN ('waiting', 'offered')`,
+    [m.id]
+  );
+  const waitlistByProfileId = {};
+  for (const w of wlRows) {
+    waitlistByProfileId[w.profile_id] = w;
+  }
+
+  let waitlistClaimBanner = null;
+  const claimTok = String(req.query.waitlist_claim || '').trim();
+  if (isUuidMember(claimTok)) {
+    const { rows: off } = await pool.query(
+      `SELECT w.id, p.service_plan_id, sp.title AS plan_title
+       FROM plan_waitlist_entries w
+       JOIN plan_capacity_profiles p ON p.id = w.profile_id AND p.deleted_at IS NULL
+       LEFT JOIN service_plans sp ON sp.id = p.service_plan_id
+       WHERE w.offer_token = $1::uuid AND w.member_id = $2::uuid AND w.deleted_at IS NULL
+         AND w.status = 'offered' AND w.offer_expires_at IS NOT NULL AND w.offer_expires_at > now()`,
+      [claimTok, m.id]
+    );
+    if (off[0]) {
+      waitlistClaimBanner = {
+        planTitle: off[0].plan_title || 'Workspace plan',
+        servicePlanId: off[0].service_plan_id,
+      };
+      await pool.query(`UPDATE plan_waitlist_entries SET status = 'claimed', updated_at = now() WHERE id = $1::uuid`, [
+        off[0].id,
+      ]);
+    }
+  }
+
+  let meetingCredits = { available: 0, granted: 0, used: 0, period_month: null };
+  try {
+    meetingCredits = await getAvailableCreditMinutes(pool, m.id);
+  } catch {
+    /* ignore */
+  }
+
   const notifCount = await unreadCount(m.id);
   res.render('member/workspace', {
     layout: 'layouts/member',
@@ -164,12 +236,55 @@ router.get('/workspace', async (req, res) => {
     bookingsPast: bookingsPast.rows,
     bookableServices: bookableSvcs.rows,
     plansByService,
+    capacityByPlanId,
+    waitlistByProfileId,
+    waitlistClaimBanner,
+    meetingCredits,
     formatDate,
     formatDateTime,
     formatNgn,
     notifCount,
     query: req.query,
   });
+});
+
+router.post('/workspace/waitlist', requireValidCsrf, async (req, res) => {
+  const m = res.locals.currentMember;
+  const planId = String(req.body.service_plan_id || '').trim();
+  if (!isUuidMember(planId)) return res.redirect('/workspace?err=waitlist');
+  const { rows: pl } = await pool.query(
+    `SELECT is_capacity_limited FROM service_plans WHERE id = $1::uuid AND deleted_at IS NULL`,
+    [planId]
+  );
+  if (!pl[0]?.is_capacity_limited) return res.redirect('/workspace?err=waitlist');
+  const { rows: cap } = await pool.query(
+    `SELECT p.id AS profile_id, p.total_units, p.waitlist_enabled,
+            (SELECT COUNT(*)::int FROM member_space_assignments msa
+             JOIN space_units su ON su.id = msa.unit_id AND su.deleted_at IS NULL
+             WHERE su.profile_id = p.id AND msa.deleted_at IS NULL AND msa.ended_at IS NULL) AS occ
+     FROM plan_capacity_profiles p
+     WHERE p.service_plan_id = $1::uuid AND p.deleted_at IS NULL
+     LIMIT 1`,
+    [planId]
+  );
+  if (!cap[0] || cap[0].waitlist_enabled === false) return res.redirect('/workspace?err=waitlist');
+  const capN = Math.max(0, Number(cap[0].total_units) || 0);
+  const occ = Math.max(0, Number(cap[0].occ) || 0);
+  if (!(capN > 0 && occ >= capN)) return res.redirect('/workspace?msg=not_full');
+  const ex = await pool.query(
+    `SELECT id FROM plan_waitlist_entries
+     WHERE profile_id = $1::uuid AND member_id = $2::uuid AND deleted_at IS NULL
+       AND status IN ('waiting', 'offered')
+     LIMIT 1`,
+    [cap[0].profile_id, m.id]
+  );
+  if (ex.rows[0]) return res.redirect('/workspace?msg=wl_exists');
+  await pool.query(
+    `INSERT INTO plan_waitlist_entries (profile_id, member_id, status, sort_key)
+     VALUES ($1::uuid, $2::uuid, 'waiting', (extract(epoch from now()) * 1000)::bigint)`,
+    [cap[0].profile_id, m.id]
+  );
+  res.redirect('/workspace?msg=wl_joined');
 });
 
 router.post('/workspace/plan-request', requireValidCsrf, async (req, res) => {
@@ -237,6 +352,24 @@ router.post('/workspace/book-service', requireValidCsrf, async (req, res) => {
   const plan = pl[0];
   const priceCents = Number(plan.price_cents || 0);
   if (priceCents <= 0) return res.redirect('/workspace?err=price');
+
+  if (plan.is_capacity_limited) {
+    const { rows: cap } = await pool.query(
+      `SELECT p.total_units,
+              (SELECT COUNT(*)::int FROM member_space_assignments msa
+               JOIN space_units su ON su.id = msa.unit_id AND su.deleted_at IS NULL
+               WHERE su.profile_id = p.id AND msa.deleted_at IS NULL AND msa.ended_at IS NULL) AS occ
+       FROM plan_capacity_profiles p
+       WHERE p.service_plan_id = $1::uuid AND p.deleted_at IS NULL
+       LIMIT 1`,
+      [plan.id]
+    );
+    const capN = Math.max(0, Number(cap[0]?.total_units) || 0);
+    const occ = Math.max(0, Number(cap[0]?.occ) || 0);
+    if (capN > 0 && occ >= capN) {
+      return res.redirect('/workspace?err=full');
+    }
+  }
 
   const serviceName = chk[0].name || 'Workspace';
   const title = `${serviceName} — ${plan.title}`;
@@ -374,7 +507,8 @@ router.get('/services/request/:serviceId', async (req, res) => {
   }
   res.render('member/service-request-form', {
     layout: 'layouts/member',
-    title: 'Request service',
+    title: rows[0].name,
+    pageSub: 'Submit a request · ' + rows[0].category_name,
     service: rows[0],
     notifCount: await unreadCount(m.id),
     query: req.query,
@@ -589,11 +723,19 @@ router.get('/services/:id', async (req, res) => {
     [id]
   );
   const notifCount = await unreadCount(m.id);
+  let meetingCredits = { available: 0, granted: 0, used: 0, period_month: null };
+  try {
+    meetingCredits = await getAvailableCreditMinutes(pool, m.id);
+  } catch {
+    /* ignore */
+  }
   res.render('member/service-detail', {
     layout: 'layouts/member',
     title: sr.service_name,
+    pageSub: sr.category_name,
     sr,
     bookingPlan,
+    meetingCredits,
     updates: updates.rows,
     msgs: msgs.rows,
     docs: docs.rows,
@@ -1100,6 +1242,7 @@ router.get('/support/:id', async (req, res) => {
   res.render('member/support-detail', {
     layout: 'layouts/member',
     title: rows[0].subject,
+    pageSub: rows[0].category,
     ticket: rows[0],
     msgs: msgs.rows,
     formatDateTime,

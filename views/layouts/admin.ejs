@@ -5,8 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title><%= title %> — EmergeHub Admin</title>
   <link rel="stylesheet" href="/css/member-portal.css?v=<%= typeof memberPortalCssV !== 'undefined' ? memberPortalCssV : '1' %>" />
+  <link rel="stylesheet" href="/css/admin-ui.css?v=<%= typeof adminUiCssV !== 'undefined' ? adminUiCssV : '1' %>" />
 </head>
-<body>
+<body class="admin-app">
   <%- include('../partials/admin-sidebar') %>
 
   <div class="main">

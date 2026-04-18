@@ -116,6 +116,22 @@ router.get('/', async (req, res) => {
      WHERE b.deleted_at IS NULL AND b.status = 'pending'
      ORDER BY b.starts_at ASC LIMIT 10`
   );
+  const queueUnassignedSpace = await pool.query(
+    `SELECT sr.id AS sr_id, sr.member_id, m.full_name, m.email, sp.title AS plan_title, sv.name AS service_name
+     FROM service_requests sr
+     JOIN members m ON m.id = sr.member_id
+     JOIN services sv ON sv.id = sr.service_id
+     JOIN service_plans sp ON sp.id = sr.service_plan_id AND sp.deleted_at IS NULL AND sp.is_capacity_limited = true
+     JOIN invoices inv ON inv.id = sr.invoice_id AND inv.deleted_at IS NULL AND inv.status = 'paid'
+     WHERE sr.deleted_at IS NULL AND sr.status = 'In Progress'
+       AND NOT EXISTS (
+         SELECT 1 FROM member_space_assignments msa
+         JOIN space_units su ON su.id = msa.unit_id AND su.deleted_at IS NULL
+         JOIN plan_capacity_profiles p ON p.id = su.profile_id AND p.service_plan_id = sp.id AND p.deleted_at IS NULL
+         WHERE msa.member_id = sr.member_id AND msa.deleted_at IS NULL AND msa.ended_at IS NULL
+       )
+     ORDER BY sr.updated_at DESC LIMIT 15`
+  );
   res.render('admin/dashboard', {
     layout: 'layouts/admin',
     title: 'Dashboard',
@@ -131,6 +147,7 @@ router.get('/', async (req, res) => {
     queueBank: queueBank.rows,
     queueTickets: queueTickets.rows,
     queueRooms: queueRooms.rows,
+    queueUnassignedSpace: queueUnassignedSpace.rows,
     formatNgn,
     formatDateTime,
   });
@@ -306,10 +323,20 @@ router.post('/catalog/:serviceId/plans/new', requireValidCsrf, async (req, res) 
   const price_cents = Math.max(0, Math.round(priceNgn * 100));
   const active = req.body.active === '1';
   const { duration_value, duration_unit } = parsePlanDurationFields(req.body);
+  const plan_slug = String(req.body.plan_slug || '').trim() || null;
+  const plan_kind = String(req.body.plan_kind || '').trim() || null;
+  const monthly_meeting_credit_minutes = Math.max(0, Math.floor(Number(req.body.monthly_meeting_credit_minutes || 0)));
+  const was = String(req.body.weekly_access_sessions || '').trim();
+  const weekly_access_sessions =
+    was === '' ? null : Math.max(0, Math.floor(Number(req.body.weekly_access_sessions)));
+  const is_capacity_limited = String(req.body.is_capacity_limited || '') === '1';
   if (!title) return res.redirect(`/admin/catalog/${serviceId}/plans?err=1`);
   await pool.query(
-    `INSERT INTO service_plans (service_id, title, description, price_cents, sort_order, active, duration_value, duration_unit)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    `INSERT INTO service_plans (
+       service_id, title, description, price_cents, sort_order, active, duration_value, duration_unit,
+       plan_slug, plan_kind, monthly_meeting_credit_minutes, weekly_access_sessions, is_capacity_limited
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
     [
       serviceId,
       title,
@@ -319,6 +346,11 @@ router.post('/catalog/:serviceId/plans/new', requireValidCsrf, async (req, res) 
       active,
       duration_value,
       duration_unit,
+      plan_slug,
+      plan_kind,
+      monthly_meeting_credit_minutes,
+      weekly_access_sessions,
+      is_capacity_limited,
     ]
   );
   res.redirect(`/admin/catalog/${serviceId}/plans?msg=created`);
@@ -334,10 +366,19 @@ router.post('/catalog/:serviceId/plans/:planId/edit', requireValidCsrf, async (r
   const price_cents = Math.max(0, Math.round(priceNgn * 100));
   const active = req.body.active === '1';
   const { duration_value, duration_unit } = parsePlanDurationFields(req.body);
+  const plan_slug = String(req.body.plan_slug || '').trim() || null;
+  const plan_kind = String(req.body.plan_kind || '').trim() || null;
+  const monthly_meeting_credit_minutes = Math.max(0, Math.floor(Number(req.body.monthly_meeting_credit_minutes || 0)));
+  const was = String(req.body.weekly_access_sessions || '').trim();
+  const weekly_access_sessions =
+    was === '' ? null : Math.max(0, Math.floor(Number(req.body.weekly_access_sessions)));
+  const is_capacity_limited = String(req.body.is_capacity_limited || '') === '1';
   if (!title) return res.redirect(`/admin/catalog/${serviceId}/plans?err=1`);
   await pool.query(
     `UPDATE service_plans SET title = $3, description = $4, price_cents = $5, sort_order = $6, active = $7,
-     duration_value = $8, duration_unit = $9, updated_at = now()
+     duration_value = $8, duration_unit = $9,
+     plan_slug = $10, plan_kind = $11, monthly_meeting_credit_minutes = $12, weekly_access_sessions = $13, is_capacity_limited = $14,
+     updated_at = now()
      WHERE id = $1::uuid AND service_id = $2`,
     [
       planId,
@@ -349,6 +390,11 @@ router.post('/catalog/:serviceId/plans/:planId/edit', requireValidCsrf, async (r
       active,
       duration_value,
       duration_unit,
+      plan_slug,
+      plan_kind,
+      monthly_meeting_credit_minutes,
+      weekly_access_sessions,
+      is_capacity_limited,
     ]
   );
   res.redirect(`/admin/catalog/${serviceId}/plans?msg=updated`);
@@ -441,9 +487,17 @@ router.get('/members/:id', async (req, res) => {
     [m.id]
   );
   const tiers = await pool.query(`SELECT * FROM membership_tiers ORDER BY sort_order`);
+  const creditLedger = await pool.query(
+    `SELECT * FROM member_meeting_credit_ledger
+     WHERE member_id = $1::uuid
+     ORDER BY period_month DESC
+     LIMIT 8`,
+    [m.id]
+  );
   res.render('admin/member-detail', {
     layout: 'layouts/admin',
     title: m.full_name,
+    pageSub: 'Member record',
     m,
     plans: plans.rows,
     svc: svc.rows,
@@ -451,9 +505,11 @@ router.get('/members/:id', async (req, res) => {
     docs: docs.rows,
     tickets: tickets.rows,
     tiers: tiers.rows,
+    creditLedger: creditLedger.rows,
     formatDate,
     formatDateTime,
     formatNgn,
+    query: req.query,
   });
 });
 
@@ -513,6 +569,52 @@ router.post('/members/:id/plan', requireValidCsrf, async (req, res) => {
     [req.params.id, tierId, status, started, renewal || null]
   );
   res.redirect(`/admin/members/${req.params.id}`);
+});
+
+router.post('/members/:id/meeting-credits', requireValidCsrf, async (req, res) => {
+  const memberId = req.params.id;
+  const adminId = res.locals.currentAdmin.id;
+  const dg = Math.floor(Number(req.body.delta_granted || 0));
+  const du = Math.floor(Number(req.body.delta_used || 0));
+  if (!dg && !du) return res.redirect(`/admin/members/${memberId}?err=credits`);
+  let pmRaw = String(req.body.period_month || '').trim();
+  let pmDate;
+  if (/^\d{4}-\d{2}$/.test(pmRaw)) {
+    pmDate = `${pmRaw}-01`;
+  } else if (/^\d{4}-\d{2}-\d{2}$/.test(pmRaw)) {
+    pmDate = pmRaw;
+  } else {
+    const { rows } = await pool.query(
+      `SELECT (date_trunc('month', timezone($1::text, now())))::date AS d`,
+      [process.env.PORTAL_TZ || 'Africa/Lagos']
+    );
+    pmDate = rows[0].d;
+  }
+  try {
+    await pool.query(
+      `INSERT INTO member_meeting_credit_ledger (member_id, period_month, granted_minutes, used_minutes)
+       VALUES ($1::uuid, $2::date, 0, 0)
+       ON CONFLICT (member_id, period_month) DO NOTHING`,
+      [memberId, pmDate]
+    );
+    await pool.query(
+      `UPDATE member_meeting_credit_ledger
+       SET granted_minutes = GREATEST(0, granted_minutes + $3::int),
+           used_minutes = GREATEST(0, used_minutes + $4::int),
+           updated_at = now()
+       WHERE member_id = $1::uuid AND period_month = $2::date`,
+      [memberId, pmDate, dg, du]
+    );
+    await pool.query(
+      `INSERT INTO meeting_credit_events (member_id, period_month, delta_granted, delta_used, reason, admin_id)
+       VALUES ($1::uuid, $2::date, $3, $4, 'admin_adjust', $5::uuid)`,
+      [memberId, pmDate, dg, du, adminId]
+    );
+  } catch (e) {
+    console.error(e);
+    return res.redirect(`/admin/members/${memberId}?err=credits_save`);
+  }
+  res.redirect(`/admin/members/${memberId}?msg=credits`);
 });
 
 router.post(

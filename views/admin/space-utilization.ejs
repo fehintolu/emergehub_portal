@@ -1,0 +1,81 @@
+<p class="page-lead anim anim-1" style="margin-top:0;">
+  <a href="/admin" class="section-link">← Dashboard</a>
+</p>
+<% if (query && query.err) { %>
+  <div class="alert alert-error anim anim-1">Could not complete that action.</div>
+<% } %>
+<% if (query && query.msg) { %>
+  <div class="alert alert-success anim anim-1">Saved.</div>
+<% } %>
+
+<div class="card anim anim-1" style="margin-bottom:20px;">
+  <div class="section-header">
+    <span class="section-title">Summary</span>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;">
+    <div><span class="stat-label">Total units</span><div class="stat-value" style="font-size:22px;"><%= summary.total_units %></div></div>
+    <div><span class="stat-label">Occupied</span><div class="stat-value" style="font-size:22px;"><%= summary.occupied_units %></div></div>
+    <div><span class="stat-label">Available</span><div class="stat-value" style="font-size:22px;"><%= summary.available_units %></div></div>
+    <div><span class="stat-label">Maintenance</span><div class="stat-value" style="font-size:22px;"><%= summary.maintenance_units %></div></div>
+    <div><span class="stat-label">Paid, not assigned</span><div class="stat-value" style="font-size:22px;"><%= unassignedPaid %></div></div>
+  </div>
+</div>
+
+<div class="member-two-col">
+  <% profiles.forEach(function (p) { %>
+    <% var cap = Number(p.total_units) || 0; var occ = Number(p.occ_units) || 0; var pct = cap > 0 ? Math.round((occ / cap) * 100) : 0; %>
+    <% var barClass = pct >= 95 ? 'util-bar--hot' : pct >= 75 ? 'util-bar--amber' : 'util-bar--ok'; %>
+    <div class="card anim anim-2">
+      <div class="section-header">
+        <span class="section-title"><%= p.service_name || 'Service' %> — <%= p.plan_title || 'Plan' %></span>
+        <a class="section-link" href="/admin/capacity/profiles/<%= p.id %>">Manage units</a>
+      </div>
+      <p class="page-lead" style="margin:0 0 10px;">Occupied <strong><%= occ %></strong> of <strong><%= cap %></strong> configured units · <%= p.unit_rows %> unit rows in grid</p>
+      <div class="util-bar <%= barClass %>"><span style="width:<%= Math.min(100, pct) %>%;"></span></div>
+      <p class="page-lead" style="margin:8px 0 0;font-size:12px;">Auto-assign: <%= p.auto_assign ? 'on' : 'off' %> · Waitlist: <%= p.waitlist_enabled ? 'on' : 'off' %></p>
+    </div>
+  <% }); %>
+</div>
+
+<% if (!profiles.length) { %>
+  <div class="card anim anim-2"><p class="page-lead" style="margin:0;">No capacity profiles yet. Run <code>npm run seed-prices</code> to seed plans and default units, or add a profile below.</p></div>
+<% } %>
+
+<div class="card anim anim-3" style="margin-top:24px;">
+  <div class="section-header">
+    <span class="section-title">Next 30 days — assignments ending (headcount)</span>
+  </div>
+  <div style="overflow-x:auto;">
+    <table class="sub-table">
+      <thead><tr><th>Date</th><th>Active with end date</th></tr></thead>
+      <tbody>
+        <% projection.forEach(function (row) { %>
+          <tr><td><%= formatDate(row.d) %></td><td><%= row.assigned %></td></tr>
+        <% }); %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card anim anim-3" style="margin-top:24px;">
+  <div class="section-header">
+    <span class="section-title">Link capacity to a plan</span>
+  </div>
+  <p class="page-lead">Create a profile for a <strong>service plan UUID</strong> (from Admin → Catalogue → service → plans in the URL).</p>
+  <form method="post" action="/admin/capacity/profiles" class="form-row" style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+    <div><label>service_plan_id (uuid)</label><input name="service_plan_id" required placeholder="uuid" style="width:280px;" /></div>
+    <div><label>Total unit slots</label><input type="number" name="total_units" min="0" value="0" style="width:100px;" /></div>
+    <div><label><input type="checkbox" name="auto_assign" value="1" /> Auto-assign on payment</label></div>
+    <div><label><input type="checkbox" name="waitlist_enabled" value="1" checked /> Waitlist enabled</label></div>
+    <button type="submit" class="btn btn-primary">Create profile</button>
+  </form>
+</div>
+
+<style>
+.util-bar { height: 10px; border-radius: 6px; background: var(--border); overflow: hidden; }
+.util-bar > span { display: block; height: 100%; border-radius: 6px; transition: width 0.2s ease; }
+.util-bar--ok > span { background: var(--green); }
+.util-bar--amber > span { background: var(--orange); }
+.util-bar--hot > span { background: var(--red); }
+</style>

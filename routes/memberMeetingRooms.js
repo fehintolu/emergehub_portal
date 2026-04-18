@@ -10,6 +10,7 @@ const { sendServiceRequestInvoiceNotifications } = require('../lib/serviceReques
 const { computeRoomQuote, portalTz } = require('../lib/roomQuote');
 const { assertSlotBookable } = require('../lib/roomSlot');
 const { loadDiscountTiers, createRoomBookingWithInvoice } = require('../lib/roomBookingInvoice');
+const { getAvailableCreditMinutes, splitQuoteWithCredits } = require('../lib/meetingCredits');
 const { listAvailableSlotStarts } = require('../lib/roomAvailableSlots');
 const { getDayTimeline } = require('../lib/roomDayTimeline');
 const { getMonthDayStates } = require('../lib/roomMonthAvailability');
@@ -180,9 +181,15 @@ router.get('/meeting-rooms/:roomId/quote', async (req, res) => {
   );
   if (!rm[0]) return res.status(404).json({ ok: false, error: 'not_found' });
   const tiers = await loadDiscountTiers(pool, roomId);
+  const fullDay = String(req.query.full_day || '') === '1';
   const quote = computeRoomQuote(
-    { hourly_rate_cents: rm[0].hourly_rate_cents, durationMinutes },
-    tiers
+    {
+      hourly_rate_cents: rm[0].hourly_rate_cents,
+      full_day_rate_cents: rm[0].full_day_rate_cents,
+      durationMinutes,
+    },
+    tiers,
+    { fullDay }
   );
   let bookable = true;
   let bookableError = null;
@@ -192,11 +199,27 @@ router.get('/meeting-rooms/:roomId/quote', async (req, res) => {
     bookable = false;
     bookableError = e.code || 'slot';
   }
+  const m = res.locals.currentMember;
+  let credits = null;
+  if (m && rm[0].consumes_plan_credits !== false && quote.total_cents > 0) {
+    const bal = await getAvailableCreditMinutes(pool, m.id);
+    const split = splitQuoteWithCredits(quote.total_cents, durationMinutes, bal.available, true);
+    credits = {
+      available_minutes: bal.available,
+      granted_minutes: bal.granted,
+      used_minutes: bal.used,
+      period_month: bal.period_month,
+      minutes_applied: split.credit_minutes_used,
+      value_cents: split.credit_value_cents,
+      payable_cents: split.payable_cents,
+    };
+  }
   res.json({
     ok: true,
     bookable,
     bookableError,
     quote,
+    credits,
     ends_at: ends.toISOString(),
   });
 });
@@ -357,6 +380,7 @@ router.post('/meeting-rooms/:roomId/book', requireValidCsrf, async (req, res) =>
   const starts = new Date(String(req.body.starts_at || ''));
   const durationMinutes = Math.max(1, Math.floor(Number(req.body.duration_minutes || 60)));
   const purpose = String(req.body.purpose || '').trim();
+  const fullDay = String(req.body.full_day || '') === '1';
   if (Number.isNaN(starts.getTime())) {
     return sendBadTime();
   }
@@ -390,6 +414,7 @@ router.post('/meeting-rooms/:roomId/book', requireValidCsrf, async (req, res) =>
       purpose,
       invoiceNumber: invNo,
       dueDateStr: dueStr,
+      fullDay,
     });
     await client.query('COMMIT');
   } catch (e) {
@@ -421,7 +446,7 @@ router.post('/meeting-rooms/:roomId/book', requireValidCsrf, async (req, res) =>
     memberName: m.full_name,
     notifyInvoiceEmail: m.notify_email_invoice,
     invoiceNumber: invNo,
-    amountCents: summary.quote.total_cents,
+    amountCents: summary.payable_cents,
     invId: summary.invoiceId,
     dueDateStr: dueStr,
     serviceRequestId: null,

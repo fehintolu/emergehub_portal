@@ -1,0 +1,102 @@
+<p class="page-lead anim anim-1" style="margin-top:0;">
+  <a href="/admin/space-utilization" class="section-link">← Space utilization</a>
+</p>
+<% if (query && query.msg) { %>
+  <div class="alert alert-success anim anim-1">Updated.</div>
+<% } %>
+<% if (query && query.err === 'exists') { %>
+  <div class="alert alert-error anim anim-1">A profile for that plan already exists.</div>
+<% } %>
+
+<div class="card anim anim-1" style="margin-bottom:20px;">
+  <div class="section-header">
+    <span class="section-title"><%= profile.plan_title %></span>
+  </div>
+  <p class="page-lead" style="margin:0;"><%= profile.service_name %></p>
+  <form method="post" action="/admin/capacity/profiles/<%= profile.id %>" style="margin-top:16px;">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+    <div class="form-row"><label>Total unit slots (target)</label><input type="number" name="total_units" min="0" value="<%= profile.total_units %>" /></div>
+    <div class="form-row"><label><input type="checkbox" name="auto_assign" value="1" <%= profile.auto_assign ? 'checked' : '' %> /> Auto-assign when invoice paid</label></div>
+    <div class="form-row"><label><input type="checkbox" name="waitlist_enabled" value="1" <%= profile.waitlist_enabled ? 'checked' : '' %> /> Waitlist enabled</label></div>
+    <button type="submit" class="btn btn-primary">Save profile</button>
+  </form>
+</div>
+
+<div class="card anim anim-2" style="margin-bottom:20px;">
+  <div class="section-header">
+    <span class="section-title">Add unit</span>
+  </div>
+  <form method="post" action="/admin/capacity/units" style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+    <input type="hidden" name="profile_id" value="<%= profile.id %>" />
+    <div class="form-row" style="margin:0;"><label>Label</label><input name="label" required placeholder="Desk 11" /></div>
+    <div class="form-row" style="margin:0;"><label>Location</label><input name="location_note" placeholder="Floor 2" /></div>
+    <button type="submit" class="btn btn-secondary">Add unit</button>
+  </form>
+</div>
+
+<div class="card anim anim-2">
+  <div class="section-header">
+    <span class="section-title">Units</span>
+  </div>
+  <div style="overflow-x:auto;">
+    <table class="sub-table">
+      <thead>
+        <tr>
+          <th>Label</th>
+          <th>Location</th>
+          <th>Status</th>
+          <th>Occupant</th>
+          <th>Started</th>
+          <th>Ends</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% units.forEach(function (u) { %>
+          <tr>
+            <td><strong><%= u.label %></strong></td>
+            <td><%= u.location_note || '—' %></td>
+            <td><span class="badge"><%= u.status %></span></td>
+            <td><%= u.occupant_name || '—' %></td>
+            <td><%= u.started_at ? formatDate(u.started_at) : '—' %></td>
+            <td><%= u.ends_at ? formatDate(u.ends_at) : '—' %></td>
+            <td style="white-space:nowrap;">
+              <% if (u.assignment_id) { %>
+                <form method="post" action="/admin/capacity/assignments/<%= u.assignment_id %>/end" style="display:inline;" onsubmit="return confirm('End this assignment?');">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                  <button type="submit" class="btn btn-ghost" style="font-size:12px;padding:6px 10px;">End</button>
+                </form>
+              <% } %>
+              <form method="post" action="/admin/capacity/units/<%= u.id %>/status" style="display:inline;">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                <input type="hidden" name="status" value="<%= u.status === 'maintenance' ? 'available' : 'maintenance' %>" />
+                <button type="submit" class="btn btn-secondary" style="font-size:12px;padding:6px 10px;"><%= u.status === 'maintenance' ? 'Return' : 'Maintenance' %></button>
+              </form>
+            </td>
+          </tr>
+        <% }); %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card anim anim-3">
+  <div class="section-header">
+    <span class="section-title">Manual assign</span>
+  </div>
+  <form method="post" action="/admin/capacity/assign" style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+    <div class="form-row" style="margin:0;"><label>Unit</label>
+      <select name="unit_id" required>
+        <% units.filter(function (u) { return u.status === 'available' && !u.assignment_id; }).forEach(function (u) { %>
+          <option value="<%= u.id %>"><%= u.label %></option>
+        <% }); %>
+      </select>
+    </div>
+    <div class="form-row" style="margin:0;"><label>Member id (uuid)</label><input name="member_id" required placeholder="member uuid" style="width:260px;" /></div>
+    <div class="form-row" style="margin:0;"><label>Started</label><input type="date" name="started_at" /></div>
+    <div class="form-row" style="margin:0;"><label>Ends</label><input type="date" name="ends_at" /></div>
+    <button type="submit" class="btn btn-primary">Assign</button>
+  </form>
+</div>

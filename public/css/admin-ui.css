@@ -1,0 +1,78 @@
+/* Admin UI — load after member-portal.css (own URL = reliable cache bust on deploy). */
+
+/* Dashboard stats */
+.admin-dash-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  gap: 14px;
+}
+
+.admin-dash-stat-tile {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 18px 14px;
+  background: var(--surface-2);
+  min-height: 88px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.admin-dash-stat-tile .stat-label {
+  margin-bottom: 10px;
+}
+
+.admin-dash-stat-tile .stat-value {
+  font-size: 26px;
+}
+
+a.admin-dash-queue-link {
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+a.admin-dash-queue-link:hover {
+  color: var(--brand);
+  text-decoration: underline;
+}
+
+/* Older admin views: direct headings/lists on white main */
+.admin-app .member-body > h2 {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  margin: 0 0 10px;
+  color: var(--text);
+}
+
+.admin-app .member-body > h2:not(:first-child) {
+  margin-top: 28px;
+}
+
+.admin-app .member-body > h3 {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 22px 0 10px;
+  color: var(--text);
+}
+
+.admin-app .member-body > p {
+  margin-bottom: 12px;
+}
+
+.admin-app .member-body > ul:not(.plain-list) {
+  list-style: disc;
+  margin: 0 0 20px 1.25rem;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.admin-app .member-body > form {
+  margin-bottom: 20px;
+}
+
+.admin-app .member-body > form .form-row:last-of-type {
+  margin-bottom: 0;
+}

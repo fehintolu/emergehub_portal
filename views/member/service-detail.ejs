@@ -23,6 +23,11 @@
     </div>
   <% } %>
 <% } %>
+<% if (typeof meetingCredits !== 'undefined' && meetingCredits && (meetingCredits.granted > 0 || meetingCredits.available > 0)) { %>
+  <div class="card anim anim-2" style="margin-bottom:16px;border-left:4px solid var(--brand);">
+    <p class="page-lead" style="margin:0;">Meeting room credits this month: <strong><%= meetingCredits.available %></strong> min remaining of <%= meetingCredits.granted %> (<%= meetingCredits.used %> used). Book eligible rooms under <a href="/meeting-rooms" class="section-link">Meeting rooms</a>.</p>
+  </div>
+<% } %>
 <% if (typeof invoicesWithItems !== 'undefined' && invoicesWithItems.length) { %>
   <% invoicesWithItems.forEach(function (pack) { var invoice = pack.invoice; var invoiceItems = pack.items; %>
     <div class="card anim anim-2" style="border-left:4px solid var(--accent);margin-bottom:20px;">
@@ -80,8 +85,7 @@
   })();
   </script>
 <% } %>
-<h2 class="page-title" style="margin-bottom:4px;"><%= sr.service_name %></h2>
-<p><span class="badge"><%= sr.status %></span> · <%= sr.category_name %></p>
+<p style="margin:0 0 8px;"><span class="badge"><%= sr.status %></span> · <%= sr.category_name %></p>
 <p class="page-lead" style="margin-bottom:20px;">Requested <%= formatDateTime(sr.created_at) %> · Updated <%= formatDateTime(sr.updated_at) %></p>
 
 <div class="card">

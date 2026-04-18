@@ -13,6 +13,31 @@
 <% if (query && query.err === 'price') { %>
   <div class="alert alert-error">This plan has no price yet — please contact EmergeHub or choose another option.</div>
 <% } %>
+<% if (query && query.err === 'full') { %>
+  <div class="alert alert-error">That workspace plan is currently at capacity. Join the waitlist below when shown, or pick another plan.</div>
+<% } %>
+<% if (query && query.err === 'waitlist') { %>
+  <div class="alert alert-error">The waitlist is not available for that selection.</div>
+<% } %>
+<% if (query && query.msg === 'wl_joined') { %>
+  <div class="alert alert-success">You are on the waitlist. We will notify you in the portal when a spot opens (48 hours to claim).</div>
+<% } %>
+<% if (query && query.msg === 'wl_exists') { %>
+  <div class="alert alert-success">You are already queued or have an active offer for this plan.</div>
+<% } %>
+<% if (query && query.msg === 'not_full') { %>
+  <div class="alert alert-success">That plan still has capacity — use Book &amp; invoice when you are ready.</div>
+<% } %>
+<% if (typeof waitlistClaimBanner !== 'undefined' && waitlistClaimBanner) { %>
+  <div class="alert alert-success">Your waitlist spot is ready for <strong><%= waitlistClaimBanner.planTitle %></strong>. Scroll to <strong>Core workspace access</strong> and use <em>Book &amp; invoice</em> for that plan, then pay within 48 hours if an invoice is created.</div>
+<% } %>
+
+<% if (typeof meetingCredits !== 'undefined' && meetingCredits && (meetingCredits.granted > 0 || meetingCredits.available > 0)) { %>
+  <div class="card" style="margin-bottom:20px;border-left:4px solid var(--green);">
+    <p style="margin:0;font-size:14px;line-height:1.55;"><strong>Meeting room credits</strong> — this month you have <strong><%= meetingCredits.available %></strong> of <strong><%= meetingCredits.granted %></strong> plan minutes remaining (<%= meetingCredits.used %> used). Credits apply automatically when you book eligible hub rooms.</p>
+    <p class="page-lead" style="margin:8px 0 0;font-size:13px;"><a href="/meeting-rooms" class="section-link">Book a meeting room</a></p>
+  </div>
+<% } %>
 
 <div class="card" style="margin-bottom:20px;border-left:4px solid var(--brand);">
   <p style="margin:0;font-size:14px;line-height:1.5;"><strong>Paid meeting rooms</strong> — browse hub spaces, see discounts, and pay online to confirm your slot. <a href="/meeting-rooms" class="section-link">Book a meeting room</a> · <a href="/meeting-rooms/my-bookings" class="section-link">My room bookings</a></p>
@@ -52,12 +77,27 @@
                 </div>
                 <div style="text-align:right;">
                   <p style="font-weight:700;margin:0 0 8px;"><%= formatNgn(p.price_cents) %></p>
-                  <form method="post" action="/workspace/book-service" style="display:inline;">
-                    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-                    <input type="hidden" name="service_id" value="<%= svc.id %>" />
-                    <input type="hidden" name="plan_id" value="<%= p.id %>" />
-                    <button type="submit" class="btn btn-primary">Book &amp; invoice</button>
-                  </form>
+                  <% var cap = (typeof capacityByPlanId !== 'undefined' && capacityByPlanId) ? capacityByPlanId[p.id] : null; %>
+                  <% var wlRow = cap && typeof waitlistByProfileId !== 'undefined' && waitlistByProfileId ? waitlistByProfileId[cap.profile_id] : null; %>
+                  <% if (cap && cap.full) { %>
+                    <span class="badge" style="margin-bottom:8px;display:inline-block;">At capacity</span>
+                    <% if (cap.waitlist_enabled && !wlRow) { %>
+                      <form method="post" action="/workspace/waitlist" style="display:inline;">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                        <input type="hidden" name="service_plan_id" value="<%= p.id %>" />
+                        <button type="submit" class="btn btn-secondary">Join waitlist</button>
+                      </form>
+                    <% } else if (wlRow) { %>
+                      <p class="page-lead" style="margin:0;font-size:12px;">Waitlist: <strong><%= wlRow.status %></strong><% if (wlRow.status === 'offered' && wlRow.offer_expires_at) { %> · offer expires <%= formatDateTime(wlRow.offer_expires_at) %><% } %></p>
+                    <% } %>
+                  <% } else { %>
+                    <form method="post" action="/workspace/book-service" style="display:inline;">
+                      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                      <input type="hidden" name="service_id" value="<%= svc.id %>" />
+                      <input type="hidden" name="plan_id" value="<%= p.id %>" />
+                      <button type="submit" class="btn btn-primary">Book &amp; invoice</button>
+                    </form>
+                  <% } %>
                 </div>
               </div>
             </div>

@@ -33,6 +33,11 @@
       <small style="display:block;margin-top:6px;color:var(--text-secondary);">Leave blank for services with no timed access window.</small>
     </div>
     <div class="form-row"><label>Sort order</label><input type="number" name="sort_order" min="0" step="1" value="0" /></div>
+    <div class="form-row"><label>plan_slug (optional)</label><input type="text" name="plan_slug" placeholder="stable id for seeds" /></div>
+    <div class="form-row"><label>plan_kind (optional)</label><input type="text" name="plan_kind" placeholder="workspace_month, workspace_day, private_office…" /></div>
+    <div class="form-row"><label>Monthly meeting credit (minutes)</label><input type="number" name="monthly_meeting_credit_minutes" min="0" step="1" value="0" /></div>
+    <div class="form-row"><label>Weekly access sessions (optional)</label><input type="number" name="weekly_access_sessions" min="0" step="1" placeholder="e.g. 2" /></div>
+    <div class="form-row"><label><input type="checkbox" name="is_capacity_limited" value="1" /> Capacity-limited (physical seats)</label></div>
     <div class="form-row"><label><input type="checkbox" name="active" value="1" checked /> Active</label></div>
     <button type="submit" class="btn btn-primary">Add plan</button>
   </form>
@@ -64,6 +69,11 @@
         </div>
       </div>
       <div class="form-row"><label>Sort</label><input type="number" name="sort_order" min="0" step="1" value="<%= p.sort_order %>" /></div>
+      <div class="form-row"><label>plan_slug</label><input type="text" name="plan_slug" value="<%= p.plan_slug || '' %>" /></div>
+      <div class="form-row"><label>plan_kind</label><input type="text" name="plan_kind" value="<%= p.plan_kind || '' %>" /></div>
+      <div class="form-row"><label>Monthly meeting credit (minutes)</label><input type="number" name="monthly_meeting_credit_minutes" min="0" step="1" value="<%= Number(p.monthly_meeting_credit_minutes) || 0 %>" /></div>
+      <div class="form-row"><label>Weekly access sessions</label><input type="number" name="weekly_access_sessions" min="0" step="1" value="<%= p.weekly_access_sessions != null ? Number(p.weekly_access_sessions) : '' %>" placeholder="—" /></div>
+      <div class="form-row"><label><input type="checkbox" name="is_capacity_limited" value="1" <%= p.is_capacity_limited ? 'checked' : '' %> /> Capacity-limited</label></div>
       <div class="form-row"><label><input type="checkbox" name="active" value="1" <%= p.active ? 'checked' : '' %> /> Active</label></div>
       <p style="display:flex;flex-wrap:wrap;gap:10px;">
         <button type="submit" class="btn btn-primary">Save</button>
