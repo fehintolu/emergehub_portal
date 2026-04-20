@@ -1,7 +1,7 @@
 <div class="portal-page portal-page--services">
-  <div class="portal-tabs">
-    <a href="/services?tab=mine" class="portal-tab<%= tab === 'mine' ? ' is-active' : '' %>">My Services</a>
-    <a href="/services?tab=request" class="portal-tab<%= tab === 'request' ? ' is-active' : '' %>">Request a Service</a>
+  <div class="svc-tab-row">
+    <a href="/services?tab=mine" class="svc-tab<%= tab === 'mine' ? ' is-active' : '' %>">My Services</a>
+    <a href="/services?tab=request" class="svc-tab<%= tab === 'request' ? ' is-active' : '' %>">Request a Service</a>
   </div>
 
 <% if (tab === 'mine') { %>
@@ -24,26 +24,71 @@
     </a>
   <% }); %>
 <% } else { %>
-  <% cats.forEach(function (c, ci) { %>
-    <div class="portal-section-head<%= ci === 0 ? ' portal-section-head--first' : '' %>">
-      <h2 class="portal-section-title"><%= c.name %></h2>
-      <% if (c.tagline) { %><p class="portal-section-tagline"><%= c.tagline %></p><% } %>
+  <%
+    function svcSkipCoreCategory(cat) {
+      var slug = String(cat.slug || '').toLowerCase();
+      var n = String(cat.name || '').trim().toLowerCase();
+      return slug === 'core-workspace' || n === 'core workspace';
+    }
+    var svcSections = [];
+    cats.forEach(function (c) {
+      if (svcSkipCoreCategory(c)) return;
+      var list = services.filter(function (s) {
+        return s.category_id === c.id && s.booking_mode !== 'plan_booking';
+      });
+      if (list.length) svcSections.push({ cat: c, list: list });
+    });
+  %>
+  <% if (!svcSections.length) { %>
+    <div class="portal-empty-card svc-catalog-empty">
+      <p>No requestable services are listed yet. Please use <a href="/meeting-rooms" class="portal-inline-link">Meeting rooms</a> for space bookings, or check back soon.</p>
     </div>
-    <% services.filter(function (s) { return s.category_id === c.id && s.booking_mode !== 'plan_booking'; }).forEach(function (s) { %>
-      <div class="portal-request-card">
-        <div class="portal-request-card-head">
-          <strong class="portal-request-title"><%= s.name %></strong>
-          <% var pc = Number(s.portal_price_cents || 0); %>
-          <% if (pc > 0) { %>
-            <span class="portal-price-tag"><%= formatNgn(pc) %></span>
-          <% } else { %>
-            <span class="portal-pill">Quote</span>
-          <% } %>
+  <% } else { %>
+    <div class="svc-catalog">
+    <% svcSections.forEach(function (sec, si) { var c = sec.cat; %>
+      <section class="svc-category-section" aria-labelledby="svc-cat-<%= c.id %>">
+        <div class="svc-cat-heading">
+          <h2 class="svc-cat-name" id="svc-cat-<%= c.id %>"><%= c.name %></h2>
+          <span class="svc-cat-count"><%= sec.list.length %> service<%= sec.list.length === 1 ? '' : 's' %></span>
         </div>
-        <p class="portal-request-desc"><%= s.description %></p>
-        <a class="portal-btn-primary" href="/services/request/<%= s.id %>">Request</a>
-      </div>
+        <% if (c.tagline) { %><p class="svc-cat-tagline"><%= c.tagline %></p><% } %>
+        <div class="svc-service-grid">
+        <% sec.list.forEach(function (s) { var pc = Number(s.portal_price_cents || 0); %>
+          <article class="svc-card">
+            <div class="svc-card-top">
+              <div class="svc-card-icon" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M4.5 3h9a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 13.5 15h-9A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3z"/>
+                  <path d="M6 7.5h6M6 10.5h4"/>
+                </svg>
+              </div>
+              <% if (pc > 0) { %>
+                <span class="svc-price-badge"><%= formatNgn(pc) %></span>
+              <% } else { %>
+                <span class="svc-price-badge svc-price-badge--quote">Quote</span>
+              <% } %>
+            </div>
+            <h3 class="svc-card-name"><%= s.name %></h3>
+            <p class="svc-card-desc"><%= s.description %></p>
+            <div class="svc-card-footer">
+              <span class="svc-card-tag">
+                <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="6" cy="6" r="4"/><path d="M6 3.5v3l1.5 1.5"/></svg>
+                <span class="svc-card-tag-text"><%= c.name %></span>
+              </span>
+              <a class="svc-btn-request" href="/services/request/<%= s.id %>">
+                Request
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 6h8M7 3l3 3-3 3"/></svg>
+              </a>
+            </div>
+          </article>
+        <% }); %>
+        </div>
+      </section>
+      <% if (si < svcSections.length - 1) { %>
+      <div class="svc-section-divider" aria-hidden="true"></div>
+      <% } %>
     <% }); %>
-  <% }); %>
+    </div>
+  <% } %>
 <% } %>
 </div>

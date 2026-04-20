@@ -2256,6 +2256,240 @@ body.admin-auth-page {
   color: #fff !important;
 }
 
+/* Services page — tab row + request catalogue (design template) */
+.portal-page--services .svc-tab-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+}
+
+.portal-page--services .svc-tab {
+  padding: 8px 18px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1.5px solid #e0d8d0;
+  background: #fff;
+  color: #5c4455;
+  text-decoration: none;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.portal-page--services .svc-tab:hover {
+  border-color: #610536;
+  color: #610536;
+}
+
+.portal-page--services .svc-tab.is-active {
+  background: #610536;
+  border-color: #610536;
+  color: #fff;
+}
+
+.portal-page--services .svc-catalog-empty {
+  max-width: 520px;
+}
+
+.portal-page--services .svc-catalog-empty a {
+  font-weight: 600;
+}
+
+.portal-page--services .svc-category-section {
+  margin-bottom: 36px;
+}
+
+.portal-page--services .svc-cat-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 5px;
+  flex-wrap: wrap;
+}
+
+.portal-page--services .svc-cat-name {
+  font-family: "Playfair Display", Georgia, serif;
+  font-size: 17px;
+  font-weight: 600;
+  color: #1a0a12;
+  margin: 0;
+}
+
+.portal-page--services .svc-cat-count {
+  font-size: 11px;
+  color: #9c7d8c;
+  background: #ede9e4;
+  padding: 2px 7px;
+  border-radius: 10px;
+}
+
+.portal-page--services .svc-cat-tagline {
+  font-size: 12.5px;
+  color: #5c4455;
+  margin: 0 0 14px;
+  line-height: 1.5;
+}
+
+.portal-page--services .svc-service-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 14px;
+}
+
+.portal-page--services .svc-service-grid > * {
+  min-width: 0;
+}
+
+.portal-page--services .svc-card {
+  background: #fff;
+  border: 1px solid #e0d8d0;
+  border-radius: 14px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: border-color 0.18s, box-shadow 0.18s, transform 0.18s;
+  position: relative;
+  overflow: hidden;
+}
+
+.portal-page--services .svc-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: #610536;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.portal-page--services .svc-card:hover {
+  border-color: #610536;
+  box-shadow: 0 4px 20px rgba(97, 5, 54, 0.08);
+  transform: translateY(-1px);
+}
+
+.portal-page--services .svc-card:hover::before {
+  opacity: 1;
+}
+
+.portal-page--services .svc-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.portal-page--services .svc-card-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background: rgba(97, 5, 54, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #610536;
+}
+
+.portal-page--services .svc-price-badge {
+  font-size: 10px;
+  font-weight: 600;
+  color: #9c7d8c;
+  background: #f5f3f0;
+  padding: 3px 8px;
+  border-radius: 10px;
+  border: 1px solid #ede9e4;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.portal-page--services .svc-price-badge--quote {
+  color: #7a0642;
+  background: rgba(97, 5, 54, 0.05);
+  border-color: rgba(97, 5, 54, 0.12);
+}
+
+.portal-page--services .svc-card-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a0a12;
+  line-height: 1.3;
+  margin: 0;
+}
+
+.portal-page--services .svc-card-desc {
+  font-size: 12px;
+  color: #5c4455;
+  line-height: 1.6;
+  margin: 0;
+  flex: 1;
+}
+
+.portal-page--services .svc-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #ede9e4;
+  margin-top: auto;
+}
+
+.portal-page--services .svc-card-tag {
+  font-size: 10px;
+  font-weight: 500;
+  color: #9c7d8c;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.portal-page--services .svc-card-tag svg {
+  flex-shrink: 0;
+}
+
+.portal-page--services .svc-card-tag-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.portal-page--services .svc-btn-request {
+  background: #610536;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-family: "DM Sans", var(--font), system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: background 0.15s, box-shadow 0.15s;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.portal-page--services .svc-btn-request:hover {
+  background: #4a0328;
+  box-shadow: 0 3px 10px rgba(97, 5, 54, 0.25);
+  color: #fff;
+}
+
+.portal-page--services .svc-section-divider {
+  height: 1px;
+  background: #e0d8d0;
+  margin-bottom: 28px;
+}
+
 .portal-service-link {
   text-decoration: none;
   color: inherit;
