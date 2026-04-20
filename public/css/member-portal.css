@@ -2110,6 +2110,746 @@ body.admin-auth-page {
   line-height: 1.5;
 }
 
+/* ── Payments / billing page ───────────────────────────────── */
+.pay-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.pay-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 28px;
+}
+
+@media (max-width: 1024px) {
+  .pay-summary-strip {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 520px) {
+  .pay-summary-strip {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pay-summary-card {
+  background: #fff;
+  border: 1px solid #e0d8d0;
+  border-radius: 12px;
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.pay-summary-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.pay-summary-icon--red {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.pay-summary-icon--amber {
+  background: #fef3e2;
+  color: #92600a;
+}
+
+.pay-summary-icon--green {
+  background: #e8f5ee;
+  color: #1a7a4a;
+}
+
+.pay-summary-icon--blue {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.pay-summary-label {
+  font-size: 11px;
+  color: #9c7d8c;
+  margin-bottom: 2px;
+}
+
+.pay-summary-value {
+  font-family: "Playfair Display", Georgia, serif;
+  font-size: 19px;
+  font-weight: 700;
+  color: #1a0a12;
+  line-height: 1.1;
+}
+
+.pay-summary-sub {
+  font-size: 10px;
+  color: #9c7d8c;
+  margin-top: 1px;
+}
+
+.pay-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pay-section-title {
+  font-family: "Playfair Display", Georgia, serif;
+  font-size: 17px;
+  font-weight: 600;
+  color: #1a0a12;
+  display: inline;
+  margin: 0;
+}
+
+.pay-section-count {
+  font-size: 11px;
+  color: #9c7d8c;
+  background: #ede9e4;
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-left: 8px;
+}
+
+.pay-empty-invoices {
+  margin-bottom: 28px;
+}
+
+.pay-invoices-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.pay-invoice-row {
+  background: #fff;
+  border: 1px solid #e0d8d0;
+  border-radius: 14px;
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.pay-invoice-row:hover {
+  border-color: #610536;
+  box-shadow: 0 3px 16px rgba(97, 5, 54, 0.07);
+}
+
+.pay-invoice-row--focused {
+  box-shadow: 0 0 0 3px rgba(97, 5, 54, 0.35);
+}
+
+.pay-invoice-row-inner {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 20px;
+  padding: 16px 20px;
+}
+
+@media (max-width: 640px) {
+  .pay-invoice-row-inner {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
+  }
+
+  .pay-inv-actions {
+    width: 100%;
+  }
+
+  .pay-btn-pay {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+.pay-inv-left {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pay-inv-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pay-inv-number {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a0a12;
+  letter-spacing: 0.01em;
+}
+
+.pay-inv-status {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.pay-inv-status--sent {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.pay-inv-status--overdue {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.pay-inv-status--pending {
+  background: #fef3e2;
+  color: #92600a;
+}
+
+.pay-inv-meta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.pay-inv-amount {
+  font-family: "Playfair Display", Georgia, serif;
+  font-size: 18px;
+  font-weight: 700;
+  color: #610536;
+}
+
+.pay-inv-due {
+  font-size: 12px;
+  color: #9c7d8c;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pay-inv-due--soon {
+  color: #92600a;
+  font-weight: 500;
+}
+
+.pay-inv-due--past {
+  color: #b91c1c;
+  font-weight: 500;
+}
+
+.pay-inv-for {
+  font-size: 12px;
+  color: #5c4455;
+}
+
+.pay-inv-print-wrap {
+  font-size: 12px;
+}
+
+.pay-inv-print-link {
+  color: #610536;
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(97, 5, 54, 0.25);
+}
+
+.pay-inv-print-link:hover {
+  border-bottom-color: #610536;
+}
+
+.pay-inv-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.pay-btn-pay {
+  background: #610536;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 18px;
+  font-family: "DM Sans", var(--font), system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s, box-shadow 0.15s;
+  white-space: nowrap;
+}
+
+.pay-btn-pay:hover {
+  background: #4a0328;
+  box-shadow: 0 3px 10px rgba(97, 5, 54, 0.25);
+}
+
+.pay-awaiting-note {
+  font-size: 12px;
+  color: #92600a;
+  font-weight: 500;
+}
+
+.pay-transfer-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #5c4455;
+  cursor: pointer;
+  padding: 0 20px 14px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  font-family: inherit;
+  transition: color 0.15s;
+}
+
+.pay-transfer-toggle:hover {
+  color: #610536;
+}
+
+.pay-transfer-toggle svg {
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+
+.pay-transfer-toggle.is-open svg {
+  transform: rotate(90deg);
+}
+
+.pay-transfer-panel {
+  display: none;
+  background: #f5f3f0;
+  border-top: 1px solid #ede9e4;
+  padding: 16px 20px;
+  gap: 16px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.pay-transfer-panel:not([hidden]) {
+  display: grid;
+}
+
+@media (max-width: 720px) {
+  .pay-transfer-panel:not([hidden]) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pay-transfer-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #9c7d8c;
+  margin-bottom: 8px;
+}
+
+.pay-transfer-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.pay-transfer-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12.5px;
+  gap: 10px;
+}
+
+.pay-tf-key {
+  color: #9c7d8c;
+}
+
+.pay-tf-val {
+  font-weight: 600;
+  color: #1a0a12;
+  text-align: right;
+  word-break: break-word;
+}
+
+.pay-transfer-ref {
+  background: rgba(97, 5, 54, 0.05);
+  border: 1px solid rgba(97, 5, 54, 0.12);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: #5c4455;
+  line-height: 1.6;
+}
+
+.pay-ref-code {
+  font-weight: 700;
+  color: #610536;
+  background: rgba(97, 5, 54, 0.08);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+}
+
+.pay-form-hint {
+  font-size: 12px;
+  color: #9c7d8c;
+  margin: 10px 0 6px;
+}
+
+.pay-form-file input {
+  font-size: 12px;
+}
+
+.pay-upload-proof-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #610536;
+  border: 1.5px solid #610536;
+  border-radius: 7px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  margin-top: 8px;
+  background: none;
+  font-family: "DM Sans", var(--font), system-ui, sans-serif;
+}
+
+.pay-upload-proof-btn:hover {
+  background: #610536;
+  color: #fff;
+}
+
+.pay-bank-card {
+  background: #fff;
+  border: 1px solid #e0d8d0;
+  border-radius: 14px;
+  overflow: hidden;
+  margin-bottom: 28px;
+}
+
+.pay-bank-card-header {
+  padding: 16px 22px;
+  border-bottom: 1px solid #ede9e4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pay-bank-card-icon {
+  width: 34px;
+  height: 34px;
+  background: rgba(97, 5, 54, 0.06);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #610536;
+  flex-shrink: 0;
+}
+
+.pay-bank-card-title {
+  font-family: "Playfair Display", Georgia, serif;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1a0a12;
+  margin: 0;
+}
+
+.pay-bank-card-body {
+  padding: 20px 22px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+@media (max-width: 800px) {
+  .pay-bank-card-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pay-bank-detail-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #9c7d8c;
+  margin-bottom: 10px;
+}
+
+.pay-bank-detail-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pay-bank-detail-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  background: #f5f3f0;
+  border-radius: 8px;
+}
+
+.pay-bdr-key {
+  font-size: 12px;
+  color: #9c7d8c;
+}
+
+.pay-bdr-val {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a0a12;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-align: right;
+}
+
+.pay-bdr-text {
+  word-break: break-word;
+}
+
+.pay-copy-btn {
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: #ede9e4;
+  border-radius: 5px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9c7d8c;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.pay-copy-btn:hover {
+  background: #610536;
+  color: #fff;
+}
+
+.pay-copy-btn.pay-copy-done {
+  background: #1a7a4a;
+  color: #fff;
+}
+
+.pay-bank-instructions {
+  background: rgba(97, 5, 54, 0.04);
+  border: 1px solid rgba(97, 5, 54, 0.1);
+  border-radius: 10px;
+  padding: 14px 16px;
+  font-size: 12.5px;
+  color: #5c4455;
+  line-height: 1.7;
+}
+
+.pay-bank-instructions ol {
+  padding-left: 18px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pay-history-card {
+  background: #fff;
+  border: 1px solid #e0d8d0;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.pay-history-header {
+  padding: 16px 22px;
+  border-bottom: 1px solid #ede9e4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.pay-history-title {
+  font-family: "Playfair Display", Georgia, serif;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1a0a12;
+  margin: 0;
+}
+
+.pay-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pay-filter-chip {
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid #e0d8d0;
+  background: #fff;
+  color: #5c4455;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+  font-family: inherit;
+}
+
+.pay-filter-chip.is-active {
+  background: #610536;
+  color: #fff;
+  border-color: #610536;
+}
+
+.pay-filter-chip:hover:not(.is-active) {
+  border-color: #610536;
+  color: #610536;
+}
+
+.pay-history-table-wrap {
+  overflow-x: auto;
+}
+
+.pay-history-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.pay-history-table th {
+  text-align: left;
+  padding: 10px 22px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #9c7d8c;
+  border-bottom: 1px solid #ede9e4;
+  background: #faf9f7;
+}
+
+.pay-history-table td {
+  padding: 13px 22px;
+  font-size: 13px;
+  color: #5c4455;
+  border-bottom: 1px solid #ede9e4;
+}
+
+.pay-history-table tr:last-child td {
+  border-bottom: none;
+}
+
+.pay-history-table tbody tr:hover td {
+  background: #faf9f7;
+}
+
+.pay-td-inv {
+  font-weight: 500;
+  color: #1a0a12;
+  font-size: 12px;
+}
+
+.pay-td-amount {
+  font-family: "Playfair Display", Georgia, serif;
+  font-size: 15px;
+  font-weight: 700;
+  color: #1a0a12;
+}
+
+.pay-method-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 10px;
+}
+
+.pay-method-pill--paystack {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.pay-method-pill--manual,
+.pay-method-pill--bank {
+  background: #ede9e4;
+  color: #5c4455;
+}
+
+.pay-sp {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 10px;
+  text-transform: capitalize;
+}
+
+.pay-sp--completed {
+  background: #e8f5ee;
+  color: #1a7a4a;
+}
+
+.pay-sp--pending {
+  background: #fef3e2;
+  color: #92600a;
+}
+
+.pay-sp--failed {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.pay-td-receipt {
+  color: #9c7d8c;
+  font-size: 12px;
+}
+
+.pay-receipt-link {
+  font-size: 12px;
+  font-weight: 600;
+  color: #610536;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.pay-history-empty {
+  padding: 24px 22px;
+  margin: 0;
+  font-size: 13px;
+  color: #9c7d8c;
+}
+
 .portal-bank-line {
   margin: 0 0 8px;
   font-size: 14px;

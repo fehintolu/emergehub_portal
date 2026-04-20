@@ -1,6 +1,44 @@
 <% var invList = (typeof outstanding !== 'undefined' && outstanding && Array.isArray(outstanding)) ? outstanding : []; %>
 <% var histList = (typeof history !== 'undefined' && history && Array.isArray(history)) ? history : []; %>
-<div class="portal-page portal-page--billing">
+<% var bs = typeof billingSummary !== 'undefined' && billingSummary ? billingSummary : {}; %>
+<% function payInvStatusLabel(st) {
+  var s = String(st || '').toLowerCase();
+  if (s === 'overdue') return 'Overdue';
+  if (s === 'awaiting_confirmation') return 'Awaiting confirmation';
+  if (s === 'unpaid') return 'Unpaid';
+  if (s === 'sent') return 'Sent';
+  return String(st || '');
+} %>
+<% function payInvStatusClass(st) {
+  var s = String(st || '').toLowerCase();
+  if (s === 'overdue') return 'pay-inv-status pay-inv-status--overdue';
+  if (s === 'awaiting_confirmation' || s === 'unpaid') return 'pay-inv-status pay-inv-status--pending';
+  return 'pay-inv-status pay-inv-status--sent';
+} %>
+<% function payMethodPill(method) {
+  var s = String(method || '').toLowerCase();
+  if (s === 'paystack') return { cls: 'pay-method-pill pay-method-pill--paystack', label: 'Paystack' };
+  if (s === 'bank_transfer') return { cls: 'pay-method-pill pay-method-pill--bank', label: 'Bank transfer' };
+  return { cls: 'pay-method-pill pay-method-pill--manual', label: method || '—' };
+} %>
+<% function payHistStatusPill(st) {
+  var s = String(st || '').toLowerCase();
+  if (s === 'completed') return { cls: 'pay-sp pay-sp--completed', label: 'Completed' };
+  if (s === 'failed') return { cls: 'pay-sp pay-sp--failed', label: 'Failed' };
+  return { cls: 'pay-sp pay-sp--pending', label: 'Pending' };
+} %>
+<div class="portal-page portal-page--billing pay-page">
+<% if (typeof billingMsg === 'string' && billingMsg === 'manual') { %>
+  <div class="portal-flash portal-flash--success">Proof of payment submitted. We will confirm your invoice soon.</div>
+<% } %>
+<% if (typeof billingErr === 'string' && billingErr) { %>
+  <div class="portal-flash portal-flash--error">
+    <% if (billingErr === 'inv') { %>That invoice could not be updated.<% } %>
+    <% if (billingErr === 'proof') { %>Please choose a proof file to upload.<% } %>
+    <% if (billingErr === 'type') { %>That file type is not allowed.<% } %>
+    <% if (!['inv','proof','type'].includes(billingErr)) { %>Something went wrong. Please try again.<% } %>
+  </div>
+<% } %>
 <% if (typeof bookedBanner !== 'undefined' && bookedBanner) { %>
   <div class="portal-flash portal-flash--success">
     Meeting room booking created. Pay within 2 hours to confirm your slot.
@@ -11,78 +49,236 @@
   <div class="portal-flash portal-flash--error">That invoice is not in your outstanding list (it may already be paid or cancelled).</div>
 <% } %>
 
-  <div class="portal-section-head">
-    <h2 class="portal-section-title">Outstanding invoices</h2>
+  <div class="pay-summary-strip">
+    <div class="pay-summary-card">
+      <div class="pay-summary-icon pay-summary-icon--red" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="14" height="11" rx="1.5"/><path d="M2 7h14M6 11h2M10 11h2"/></svg>
+      </div>
+      <div class="pay-summary-text">
+        <div class="pay-summary-label">Outstanding</div>
+        <div class="pay-summary-value"><%= formatNgn(bs.outstandingTotalCents || 0) %></div>
+        <div class="pay-summary-sub"><%= bs.unpaidCount || 0 %> unpaid invoice<%= (bs.unpaidCount || 0) === 1 ? '' : 's' %></div>
+      </div>
+    </div>
+    <div class="pay-summary-card">
+      <div class="pay-summary-icon pay-summary-icon--amber" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="9" r="7"/><path d="M9 5v4l3 2"/></svg>
+      </div>
+      <div class="pay-summary-text">
+        <div class="pay-summary-label">Due soonest</div>
+        <div class="pay-summary-value"><%= bs.dueSoonestLabel ? bs.dueSoonestLabel : '—' %></div>
+        <div class="pay-summary-sub"><%= bs.dueSoonestSub || 'No open invoices' %></div>
+      </div>
+    </div>
+    <div class="pay-summary-card">
+      <div class="pay-summary-icon pay-summary-icon--green" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9l4 4 8-8"/></svg>
+      </div>
+      <div class="pay-summary-text">
+        <div class="pay-summary-label">Paid this month</div>
+        <div class="pay-summary-value"><%= formatNgn(bs.paidMonthCents || 0) %></div>
+        <div class="pay-summary-sub"><%= bs.paidMonthCount || 0 %> transaction<%= (bs.paidMonthCount || 0) === 1 ? '' : 's' %></div>
+      </div>
+    </div>
+    <div class="pay-summary-card">
+      <div class="pay-summary-icon pay-summary-icon--blue" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 10l4-7 3 5 2-3 5 5"/></svg>
+      </div>
+      <div class="pay-summary-text">
+        <div class="pay-summary-label">Total paid (all time)</div>
+        <div class="pay-summary-value"><%= formatNgn(bs.paidAllCents || 0) %></div>
+        <div class="pay-summary-sub"><%= bs.paidAllCount || 0 %> transaction<%= (bs.paidAllCount || 0) === 1 ? '' : 's' %></div>
+      </div>
+    </div>
   </div>
+
+  <div class="pay-section-head">
+    <div>
+      <h2 class="pay-section-title">Outstanding invoices</h2>
+      <span class="pay-section-count"><%= invList.length %> open</span>
+    </div>
+  </div>
+
 <% if (!invList.length) { %>
-  <div class="portal-panel portal-panel--empty">
-    <p class="portal-panel-muted">None — you are up to date.</p>
+  <div class="portal-empty-card pay-empty-invoices">
+    <p>None — you are up to date.</p>
+  </div>
+<% } else { %>
+  <div class="pay-invoices-list">
+  <% invList.forEach(function (inv) { %>
+    <% var ex = typeof invExtras !== 'undefined' && invExtras ? (invExtras[String(inv.id)] || invExtras[inv.id]) : null; %>
+    <% var st = String(inv.status || '').toLowerCase(); %>
+    <% var canPayStack = ['unpaid','sent','overdue'].includes(st); %>
+    <% var dueSoon = false; var duePast = false; %>
+    <% if (inv.due_date) {
+      var _dt = new Date(inv.due_date); _dt.setHours(0,0,0,0);
+      var _td = new Date(); _td.setHours(0,0,0,0);
+      var _dd = Math.round((_dt - _td) / 86400000);
+      dueSoon = _dd >= 0 && _dd <= 7 && st !== 'overdue';
+      duePast = _dd < 0;
+    } %>
+    <div class="pay-invoice-row<%= (typeof invoiceFocus === 'string' && invoiceFocus === String(inv.id)) ? ' pay-invoice-row--focused' : '' %>" id="invoice-<%= inv.id %>">
+      <div class="pay-invoice-row-inner">
+        <div class="pay-inv-left">
+          <div class="pay-inv-top">
+            <span class="pay-inv-number"><%= inv.invoice_number %></span>
+            <span class="<%= payInvStatusClass(inv.status) %>"><%= payInvStatusLabel(inv.status) %></span>
+          </div>
+          <div class="pay-inv-meta">
+            <span class="pay-inv-amount"><%= formatNgn(inv.total_cents) %></span>
+            <% if (inv.due_date) { %>
+              <span class="pay-inv-due<%= dueSoon ? ' pay-inv-due--soon' : '' %><%= duePast ? ' pay-inv-due--past' : '' %>">
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="6" cy="6" r="4"/><path d="M6 3.5v3l1.5 1.5"/></svg>
+                Due <%= formatDate(inv.due_date) %>
+              </span>
+            <% } %>
+            <% if (ex && ex.links && ex.links.length) { %>
+              <span class="pay-inv-for">Includes: <% ex.links.forEach(function (l, idx) { %><%= idx ? ', ' : '' %><%= l.service_name || l.sr_title || 'Service' %><% }); %></span>
+            <% } else if (ex && ex.room) { %>
+              <span class="pay-inv-for">Meeting room — <%= ex.room.room_name %> (<%= ex.room.booking_reference %>)</span>
+            <% } %>
+            <span class="pay-inv-print-wrap"><a href="/billing/invoices/<%= inv.id %>/print" target="_blank" rel="noopener" class="pay-inv-print-link">Print invoice</a></span>
+          </div>
+        </div>
+        <div class="pay-inv-actions">
+          <% if (canPayStack) { %>
+            <button type="button" class="pay-btn-pay pay-now" data-invoice="<%= inv.id %>">
+              <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="1" y="3" width="12" height="9" rx="1.5"/><path d="M1 6h12M4 9.5h2M8 9.5h2"/></svg>
+              Pay now
+            </button>
+          <% } %>
+          <% if (st === 'awaiting_confirmation') { %>
+            <span class="pay-awaiting-note">Awaiting confirmation</span>
+          <% } %>
+        </div>
+      </div>
+      <% if (canPayStack) { %>
+        <button type="button" class="pay-transfer-toggle" aria-expanded="false" data-pay-toggle="transfer">
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 2l4 3-4 3"/></svg>
+          Pay by bank transfer
+        </button>
+        <div class="pay-transfer-panel" hidden>
+          <div class="pay-transfer-block">
+            <div class="pay-transfer-label">Bank details</div>
+            <div class="pay-transfer-fields">
+              <div class="pay-transfer-field"><span class="pay-tf-key">Bank</span><span class="pay-tf-val"><%= bankName || '—' %></span></div>
+              <div class="pay-transfer-field"><span class="pay-tf-key">Account name</span><span class="pay-tf-val"><%= accountName || '—' %></span></div>
+              <div class="pay-transfer-field"><span class="pay-tf-key">Account number</span><span class="pay-tf-val"><%= accountNumber || '—' %></span></div>
+            </div>
+          </div>
+          <div class="pay-transfer-block">
+            <div class="pay-transfer-label">Payment reference</div>
+            <div class="pay-transfer-ref">
+              Use <span class="pay-ref-code"><%= inv.invoice_number %></span> as your transfer reference. Once sent, upload your proof of payment below.
+            </div>
+            <form method="post" action="/billing/manual" enctype="multipart/form-data" class="pay-manual-form">
+              <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
+              <input type="hidden" name="invoice_id" value="<%= inv.id %>" />
+              <p class="pay-form-hint">Upload proof (PDF / JPG / PNG / DOCX)</p>
+              <div class="pay-form-file"><input type="file" name="proof" required accept=".pdf,.jpg,.jpeg,.png,.docx" /></div>
+              <button type="submit" class="pay-upload-proof-btn">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M6 2v6M3 5l3-3 3 3"/><path d="M2 10h8"/></svg>
+                Upload proof of payment
+              </button>
+            </form>
+          </div>
+        </div>
+      <% } %>
+    </div>
+  <% }); %>
   </div>
 <% } %>
-<% invList.forEach(function (inv) { %>
-  <div class="portal-panel portal-panel--invoice<%= inv.status === 'overdue' ? ' is-overdue' : '' %><%= (typeof invoiceFocus === 'string' && invoiceFocus === String(inv.id)) ? ' is-focused' : '' %>" id="invoice-<%= inv.id %>">
-    <div class="portal-invoice-head">
-      <strong class="portal-invoice-num"><%= inv.invoice_number %></strong>
-      <span class="portal-pill"><%= inv.status %></span>
+
+  <div class="pay-bank-card">
+    <div class="pay-bank-card-header">
+      <div class="pay-bank-card-icon" aria-hidden="true">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="12" height="9" rx="1.5"/><path d="M2 7h12M5 10.5h2M9 10.5h2"/></svg>
+      </div>
+      <h2 class="pay-bank-card-title">Bank transfer details</h2>
     </div>
-    <p class="portal-invoice-amount"><%= formatNgn(inv.total_cents) %> · Due <%= formatDate(inv.due_date) %></p>
-    <% var ex = typeof invExtras !== 'undefined' && invExtras ? (invExtras[String(inv.id)] || invExtras[inv.id]) : null; %>
-    <% if (ex && ex.links && ex.links.length) { %>
-      <p class="portal-invoice-meta"><strong>Includes</strong>:
-        <% ex.links.forEach(function (l, idx) { %><%= idx ? ', ' : '' %><%= l.service_name || l.sr_title || 'Service' %><% }); %>
-      </p>
-    <% } %>
-    <% if (ex && ex.room) { %>
-      <p class="portal-invoice-meta"><strong>Meeting room</strong>: <%= ex.room.room_name %> (<%= ex.room.booking_reference %>)</p>
-    <% } %>
-    <p class="portal-invoice-meta"><a href="/billing/invoices/<%= inv.id %>/print" target="_blank" rel="noopener" class="portal-inline-link">Print invoice</a></p>
-    <% if (['unpaid','sent','overdue'].includes(inv.status)) { %>
-      <button type="button" class="portal-btn-primary pay-now" data-invoice="<%= inv.id %>">Pay now</button>
-      <details class="portal-details">
-        <summary>I paid by bank transfer</summary>
-        <form method="post" action="/billing/manual" enctype="multipart/form-data" class="portal-manual-form">
-          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-          <input type="hidden" name="invoice_id" value="<%= inv.id %>" />
-          <p class="portal-form-hint">Upload proof (PDF/JPG/PNG/DOCX)</p>
-          <div class="form-row"><input type="file" name="proof" required accept=".pdf,.jpg,.jpeg,.png,.docx" /></div>
-          <button type="submit" class="portal-btn-secondary">Submit</button>
-        </form>
-      </details>
-    <% } %>
-    <% if (inv.status === 'awaiting_confirmation') { %>
-      <p class="portal-panel-muted" style="margin-top:10px;"><em>Awaiting confirmation from EmergeHub.</em></p>
-    <% } %>
+    <div class="pay-bank-card-body">
+      <div class="pay-bank-detail-block">
+        <div class="pay-bank-detail-label">EmergeHub account</div>
+        <div class="pay-bank-detail-fields">
+          <div class="pay-bank-detail-row">
+            <span class="pay-bdr-key">Bank</span>
+            <span class="pay-bdr-val">
+              <span class="pay-bdr-text"><%= bankName || '—' %></span>
+              <% if (bankName) { %><button type="button" class="pay-copy-btn" data-copy="<%= bankName %>" title="Copy bank name"><svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="7" height="7" rx="1"/><path d="M8 4V3a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h1"/></svg></button><% } %>
+            </span>
+          </div>
+          <div class="pay-bank-detail-row">
+            <span class="pay-bdr-key">Account name</span>
+            <span class="pay-bdr-val">
+              <span class="pay-bdr-text"><%= accountName || '—' %></span>
+              <% if (accountName) { %><button type="button" class="pay-copy-btn" data-copy="<%= accountName %>" title="Copy account name"><svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="7" height="7" rx="1"/><path d="M8 4V3a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h1"/></svg></button><% } %>
+            </span>
+          </div>
+          <div class="pay-bank-detail-row">
+            <span class="pay-bdr-key">Account number</span>
+            <span class="pay-bdr-val">
+              <span class="pay-bdr-text"><%= accountNumber || '—' %></span>
+              <% if (accountNumber) { %><button type="button" class="pay-copy-btn" data-copy="<%= accountNumber %>" title="Copy account number"><svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="7" height="7" rx="1"/><path d="M8 4V3a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h1"/></svg></button><% } %>
+            </span>
+          </div>
+        </div>
+      </div>
+      <div class="pay-bank-detail-block">
+        <div class="pay-bank-detail-label">How to pay by transfer</div>
+        <div class="pay-bank-instructions">
+          <ol>
+            <li>Transfer the exact invoice amount to the account details shown.</li>
+            <li>Use your <strong>invoice number</strong> as the payment reference — this is how we match your payment.</li>
+            <li>Take a screenshot or save your bank&rsquo;s confirmation.</li>
+            <li>Expand <strong>Pay by bank transfer</strong> on the relevant invoice above and upload your proof.</li>
+            <li>We will confirm and mark your invoice as paid within one business day.</li>
+          </ol>
+        </div>
+      </div>
+    </div>
   </div>
-<% }); %>
 
-  <div class="portal-section-head">
-    <h2 class="portal-section-title">Bank transfer</h2>
-  </div>
-  <div class="portal-panel">
-    <p class="portal-bank-line"><strong><%= bankName || '—' %></strong></p>
-    <p class="portal-bank-line">Account name: <%= accountName %></p>
-    <p class="portal-bank-line">Account number: <%= accountNumber || '—' %></p>
-  </div>
-
-  <div class="portal-section-head">
-    <h2 class="portal-section-title">Payment history</h2>
-  </div>
-  <div class="portal-table-wrap">
-    <table class="portal-data-table">
-      <thead><tr><th>Date</th><th>Invoice</th><th>Amount</th><th>Method</th><th>Status</th><th>Receipt</th></tr></thead>
-      <tbody>
-        <% histList.forEach(function (p) { %>
+  <div class="pay-history-card">
+    <div class="pay-history-header">
+      <h2 class="pay-history-title">Payment history</h2>
+      <div class="pay-filter-row" role="tablist" aria-label="Filter payments">
+        <button type="button" class="pay-filter-chip is-active" data-pay-filter="all">All</button>
+        <button type="button" class="pay-filter-chip" data-pay-filter="completed">Completed</button>
+        <button type="button" class="pay-filter-chip" data-pay-filter="pending">Pending</button>
+      </div>
+    </div>
+    <% if (!histList.length) { %>
+      <p class="pay-history-empty">No payments yet.</p>
+    <% } else { %>
+    <div class="pay-history-table-wrap">
+      <table class="pay-history-table">
+        <thead>
           <tr>
-            <td><%= formatDateTime(p.created_at) %></td>
-            <td><%= p.invoice_number %></td>
-            <td><%= formatNgn(p.amount_cents) %></td>
-            <td><%= p.method %></td>
-            <td><%= p.status %></td>
-            <td><% if (p.status === 'completed' && p.receipt_number) { %><a href="/billing/receipt/<%= p.id %>" class="portal-inline-link">Receipt</a><% } else { %>—<% } %></td>
+            <th>Date</th>
+            <th>Invoice</th>
+            <th>Amount</th>
+            <th>Method</th>
+            <th>Status</th>
+            <th>Receipt</th>
           </tr>
-        <% }); %>
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          <% histList.forEach(function (p) { %>
+            <% var hp = payHistStatusPill(p.status); %>
+            <% var mp = payMethodPill(p.method); %>
+            <tr data-pay-status="<%= String(p.status || '').toLowerCase() %>">
+              <td><%= formatDateTime(p.created_at) %></td>
+              <td class="pay-td-inv"><%= p.invoice_number %></td>
+              <td class="pay-td-amount"><%= formatNgn(p.amount_cents) %></td>
+              <td><span class="<%= mp.cls %>"><%= mp.label %></span></td>
+              <td><span class="<%= hp.cls %>"><svg width="6" height="6" viewBox="0 0 6 6" aria-hidden="true"><circle cx="3" cy="3" r="3" fill="currentColor"/></svg><%= hp.label %></span></td>
+              <td class="pay-td-receipt"><% if (p.status === 'completed' && p.receipt_number) { %><a href="/billing/receipt/<%= p.id %>" class="pay-receipt-link">Download</a><% } else { %>—<% } %></td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+    <% } %>
   </div>
 </div>
 
@@ -104,6 +300,50 @@
           alert('Paystack did not return a checkout URL.');
         }
       }).catch(function () { alert('Could not start payment.'); });
+    });
+  });
+
+  document.querySelectorAll('[data-pay-toggle="transfer"]').forEach(function (toggle) {
+    var row = toggle.closest('.pay-invoice-row');
+    var panel = row && row.querySelector('.pay-transfer-panel');
+    if (!panel) return;
+    toggle.addEventListener('click', function () {
+      var open = panel.hasAttribute('hidden');
+      if (open) {
+        panel.removeAttribute('hidden');
+        toggle.setAttribute('aria-expanded', 'true');
+        toggle.classList.add('is-open');
+      } else {
+        panel.setAttribute('hidden', '');
+        toggle.setAttribute('aria-expanded', 'false');
+        toggle.classList.remove('is-open');
+      }
+    });
+  });
+
+  document.querySelectorAll('.pay-copy-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var text = btn.getAttribute('data-copy') || '';
+      if (!text || text === '—') return;
+      navigator.clipboard.writeText(text).then(function () {
+        btn.classList.add('pay-copy-done');
+        setTimeout(function () { btn.classList.remove('pay-copy-done'); }, 1200);
+      }).catch(function () {});
+    });
+  });
+
+  var chips = document.querySelectorAll('.pay-filter-chip');
+  var rows = document.querySelectorAll('.pay-history-table tbody tr');
+  chips.forEach(function (chip) {
+    chip.addEventListener('click', function () {
+      var f = chip.getAttribute('data-pay-filter') || 'all';
+      chips.forEach(function (c) { c.classList.toggle('is-active', c === chip); });
+      rows.forEach(function (tr) {
+        var st = (tr.getAttribute('data-pay-status') || '').toLowerCase();
+        if (f === 'all') tr.hidden = false;
+        else if (f === 'completed') tr.hidden = st !== 'completed';
+        else if (f === 'pending') tr.hidden = st !== 'pending';
+      });
     });
   });
 })();

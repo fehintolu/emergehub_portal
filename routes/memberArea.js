@@ -68,6 +68,82 @@ function isUuidMember(s) {
   );
 }
 
+/** Summary metrics for member payments page (outstanding, due soonest, paid totals). */
+function computeBillingSummary(invRows, historyRows, formatDateSafe) {
+  const unpaidStatuses = ['unpaid', 'sent', 'overdue'];
+  let outstandingTotalCents = 0;
+  const unpaidInvs = [];
+  (invRows || []).forEach((inv) => {
+    const st = String(inv.status || '').toLowerCase();
+    if (unpaidStatuses.includes(st)) {
+      unpaidInvs.push(inv);
+      outstandingTotalCents += Number(inv.total_cents || 0);
+    }
+  });
+
+  let dueSoonestInv = null;
+  let dueSoonestTs = null;
+  unpaidInvs.forEach((inv) => {
+    if (!inv.due_date) return;
+    const t = new Date(inv.due_date).getTime();
+    if (dueSoonestTs === null || t < dueSoonestTs) {
+      dueSoonestTs = t;
+      dueSoonestInv = inv;
+    }
+  });
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  let dueSoonestLabel = null;
+  let dueSoonestSub = null;
+  let dueSoonHighlight = false;
+  if (dueSoonestInv && dueSoonestInv.due_date) {
+    const d = new Date(dueSoonestInv.due_date);
+    d.setHours(0, 0, 0, 0);
+    const days = Math.round((d - today) / 864e5);
+    dueSoonestLabel = formatDateSafe(dueSoonestInv.due_date);
+    if (days < 0) {
+      dueSoonestSub = 'Overdue';
+      dueSoonHighlight = true;
+    } else {
+      dueSoonestSub = `${days} day${days === 1 ? '' : 's'} remaining`;
+      dueSoonHighlight = days <= 7;
+    }
+  }
+
+  const now = new Date();
+  const y = now.getFullYear();
+  const mon = now.getMonth();
+  let paidMonthCents = 0;
+  let paidMonthCount = 0;
+  let paidAllCents = 0;
+  let paidAllCount = 0;
+  (historyRows || []).forEach((p) => {
+    if (String(p.status || '').toLowerCase() === 'completed') {
+      const ac = Number(p.amount_cents || 0);
+      paidAllCents += ac;
+      paidAllCount += 1;
+      const pc = new Date(p.created_at);
+      if (pc.getFullYear() === y && pc.getMonth() === mon) {
+        paidMonthCents += ac;
+        paidMonthCount += 1;
+      }
+    }
+  });
+
+  return {
+    outstandingTotalCents,
+    unpaidCount: unpaidInvs.length,
+    dueSoonestLabel,
+    dueSoonestSub,
+    dueSoonHighlight,
+    paidMonthCents,
+    paidMonthCount,
+    paidAllCents,
+    paidAllCount,
+  };
+}
+
 router.get('/dashboard', async (req, res) => {
   const m = res.locals.currentMember;
   const stats = await dashboardStats(m.id);
@@ -886,13 +962,22 @@ router.get('/billing', async (req, res) => {
   const bookedBanner = req.query.booked === '1';
   const bookingRef =
     typeof req.query.ref === 'string' && req.query.ref.length <= 80 ? req.query.ref : null;
+  const billingSummary = computeBillingSummary(invRows, historyRows, formatDate);
+  const pageSub = new Date().toLocaleDateString('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
   try {
     res.render('member/billing', {
       layout: 'layouts/member',
       title: 'Payments',
+      pageSub,
       outstanding: invRows,
       invExtras,
       history: historyRows,
+      billingSummary,
       formatNgn,
       formatDate,
       formatDateTime,
@@ -904,6 +989,8 @@ router.get('/billing', async (req, res) => {
       invoiceFocus,
       bookedBanner,
       bookingRef,
+      billingMsg: req.query.msg === 'manual' ? 'manual' : null,
+      billingErr: typeof req.query.err === 'string' ? req.query.err : null,
     });
   } catch (e) {
     console.error('billing render', e);
@@ -919,7 +1006,8 @@ router.post('/billing/pay/init', requireValidCsrf, async (req, res) => {
     [invoiceId, m.id]
   );
   const inv = rows[0];
-  if (!inv || !['unpaid', 'sent', 'overdue'].includes(inv.status)) {
+  const invSt = String(inv && inv.status ? inv.status : '').toLowerCase();
+  if (!inv || !['unpaid', 'sent', 'overdue'].includes(invSt)) {
     return res.status(400).json({ error: 'Invalid invoice' });
   }
   const ref = `PH-${crypto.randomBytes(12).toString('hex')}`;
@@ -959,7 +1047,8 @@ router.post('/billing/manual', upload.single('proof'), requireValidCsrf, async (
     [invoiceId, m.id]
   );
   const inv = rows[0];
-  if (!inv || !['unpaid', 'sent', 'overdue'].includes(inv.status)) {
+  const invSt = String(inv && inv.status ? inv.status : '').toLowerCase();
+  if (!inv || !['unpaid', 'sent', 'overdue'].includes(invSt)) {
     return res.redirect('/billing?err=inv');
   }
   if (!req.file || !req.file.buffer) {
