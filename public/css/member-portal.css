@@ -1774,3 +1774,198 @@ body.admin-auth-page {
   border-radius: 8px;
   border: 1px solid #e0d8d0;
 }
+
+/* ── Workspace: Book & invoice confirmation modal ─────────── */
+.ws-modal[hidden] {
+  display: none !important;
+}
+
+.ws-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  font-family: "DM Sans", var(--font), system-ui, sans-serif;
+}
+
+.ws-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(26, 10, 18, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+.ws-modal-dialog {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 440px;
+  background: #fff;
+  border-radius: 16px;
+  border: 1px solid #e0d8d0;
+  box-shadow: 0 24px 60px rgba(56, 2, 32, 0.22);
+  padding: 26px 26px 22px;
+  animation: wsModalIn 0.22s ease both;
+}
+
+@keyframes wsModalIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.ws-modal-accent {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 4px;
+  border-radius: 16px 16px 0 0;
+  background: linear-gradient(90deg, #610536 0%, #7a0642 55%, #fff605 100%);
+}
+
+.ws-modal-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #e0d8d0;
+  border-radius: 8px;
+  background: #faf9f7;
+  color: #5c4455;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.ws-modal-close:hover {
+  background: #f5f3f0;
+  border-color: #d0c8c0;
+}
+
+.ws-modal-title {
+  font-family: "Playfair Display", Georgia, serif;
+  font-size: 22px;
+  font-weight: 600;
+  color: #1a0a12;
+  margin: 0 40px 10px 0;
+  line-height: 1.25;
+}
+
+.ws-modal-lead {
+  font-size: 13.5px;
+  color: #5c4455;
+  line-height: 1.55;
+  margin: 0 0 16px;
+}
+
+.ws-modal-summary {
+  background: linear-gradient(160deg, #fdf8fb 0%, #faf9f7 100%);
+  border: 1px solid #ede9e4;
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+
+.ws-modal-summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 13px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(224, 216, 208, 0.7);
+}
+
+.ws-modal-summary-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.ws-modal-summary-row:first-child {
+  padding-top: 0;
+}
+
+.ws-modal-summary-label {
+  color: #9c7d8c;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+}
+
+.ws-modal-summary-value {
+  color: #1a0a12;
+  font-weight: 500;
+  text-align: right;
+  max-width: 68%;
+}
+
+.ws-modal-summary-row--price {
+  align-items: flex-end;
+}
+
+.ws-modal-summary-price-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  text-align: right;
+}
+
+.ws-modal-summary-price {
+  font-family: "Playfair Display", Georgia, serif;
+  font-size: 22px;
+  font-weight: 700;
+  color: #610536;
+  line-height: 1.1;
+}
+
+.ws-modal-summary-period {
+  font-size: 11px;
+  color: #9c7d8c;
+  font-family: "DM Sans", var(--font), system-ui, sans-serif;
+  font-weight: 500;
+}
+
+.ws-modal-note {
+  font-size: 12px;
+  color: #9c7d8c;
+  line-height: 1.5;
+  margin: 0 0 18px;
+}
+
+.ws-modal-note a {
+  color: #610536;
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(97, 5, 54, 0.25);
+}
+
+.ws-modal-note a:hover {
+  border-bottom-color: #610536;
+}
+
+.ws-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.ws-modal-actions .ws-btn-book {
+  min-height: 42px;
+}

@@ -193,11 +193,18 @@
                       <p class="ws-waitlist-status">At capacity</p>
                     <% } %>
                   <% } else { %>
-                    <form method="post" action="/workspace/book-service" class="ws-plan-form">
+                    <form method="post" action="/workspace/book-service" class="ws-plan-form ws-book-service-form" data-ws-book-form>
                       <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                       <input type="hidden" name="service_id" value="<%= svc.id %>" />
                       <input type="hidden" name="plan_id" value="<%= p.id %>" />
-                      <button type="submit" class="ws-btn-book">Book &amp; Invoice
+                      <button
+                        type="button"
+                        class="ws-btn-book js-ws-book-open"
+                        data-service-name="<%= svc.name %>"
+                        data-plan-title="<%= p.title %>"
+                        data-price="<%= formatNgn(p.price_cents) %>"
+                        data-period="<%= periodLbl ? periodLbl : '' %>"
+                      >Book &amp; Invoice
                         <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 6h8M7 3l3 3-3 3"/></svg>
                       </button>
                     </form>
@@ -285,4 +292,109 @@
   </div>
 <% } %>
 
+  <div id="ws-book-modal" class="ws-modal" hidden data-ws-book-modal>
+    <div class="ws-modal-backdrop" tabindex="-1" data-ws-book-close></div>
+    <div
+      class="ws-modal-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="ws-book-modal-title"
+    >
+      <button type="button" class="ws-modal-close" data-ws-book-close aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+      </button>
+      <div class="ws-modal-accent"></div>
+      <h2 id="ws-book-modal-title" class="ws-modal-title">Confirm booking</h2>
+      <p class="ws-modal-lead">You are about to create a workspace booking request. We will generate your invoice right away.</p>
+      <div class="ws-modal-summary" data-ws-book-summary></div>
+      <p class="ws-modal-note">Make sure your <a href="/settings/business">business details</a> are correct before you continue.</p>
+      <div class="ws-modal-actions">
+        <button type="button" class="ws-btn-book secondary" data-ws-book-close>Cancel</button>
+        <button type="button" class="ws-btn-book" data-ws-book-confirm>
+          Confirm &amp; create invoice
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 6h8M7 3l3 3-3 3"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
 </div>
+
+<script>
+(function () {
+  var modal = document.querySelector('[data-ws-book-modal]');
+  if (!modal) return;
+  var summaryEl = modal.querySelector('[data-ws-book-summary]');
+  var confirmBtn = modal.querySelector('[data-ws-book-confirm]');
+  var pendingForm = null;
+  var lastFocus = null;
+
+  function escapeHtml(s) {
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function openModal(form, btn) {
+    pendingForm = form;
+    lastFocus = document.activeElement;
+    var svc = btn.getAttribute('data-service-name') || '';
+    var plan = btn.getAttribute('data-plan-title') || '';
+    var price = btn.getAttribute('data-price') || '';
+    var period = (btn.getAttribute('data-period') || '').trim();
+    summaryEl.innerHTML =
+      '<div class="ws-modal-summary-row"><span class="ws-modal-summary-label">Service</span><span class="ws-modal-summary-value">' +
+      escapeHtml(svc) +
+      '</span></div>' +
+      '<div class="ws-modal-summary-row"><span class="ws-modal-summary-label">Plan</span><span class="ws-modal-summary-value">' +
+      escapeHtml(plan) +
+      '</span></div>' +
+      '<div class="ws-modal-summary-row ws-modal-summary-row--price"><span class="ws-modal-summary-label">Amount</span><span class="ws-modal-summary-price-wrap"><span class="ws-modal-summary-price">' +
+      escapeHtml(price) +
+      '</span>' +
+      (period ? '<span class="ws-modal-summary-period">' + escapeHtml(period) + '</span>' : '') +
+      '</span></div>';
+    modal.removeAttribute('hidden');
+    document.body.style.overflow = 'hidden';
+    confirmBtn.disabled = false;
+    confirmBtn.focus();
+  }
+
+  function closeModal() {
+    modal.setAttribute('hidden', '');
+    document.body.style.overflow = '';
+    pendingForm = null;
+    if (lastFocus && typeof lastFocus.focus === 'function') lastFocus.focus();
+  }
+
+  function onConfirm() {
+    if (!pendingForm) return;
+    confirmBtn.disabled = true;
+    pendingForm.submit();
+  }
+
+  document.addEventListener('click', function (e) {
+    var openBtn = e.target.closest && e.target.closest('.js-ws-book-open');
+    if (openBtn) {
+      e.preventDefault();
+      var form = openBtn.closest('[data-ws-book-form]');
+      if (form) openModal(form, openBtn);
+      return;
+    }
+    if (e.target.closest && e.target.closest('[data-ws-book-close]')) {
+      e.preventDefault();
+      closeModal();
+    }
+    if (e.target.closest && e.target.closest('[data-ws-book-confirm]')) {
+      e.preventDefault();
+      onConfirm();
+    }
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !modal.hasAttribute('hidden')) {
+      closeModal();
+    }
+  });
+})();
+</script>
