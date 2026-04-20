@@ -22,10 +22,51 @@ function isUuid(s) {
   return typeof s === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
 }
 
+function myBookingsSummary(rows) {
+  const now = new Date();
+  const y = now.getFullYear();
+  const mon = now.getMonth();
+  let pendingCount = 0;
+  let pendingCents = 0;
+  let confirmedUpcoming = 0;
+  let cancelledThisMonth = 0;
+  let totalSpentConfirmed = 0;
+
+  (rows || []).forEach((r) => {
+    const st = String(r.status || '').toLowerCase();
+    if (st === 'pending_payment') {
+      pendingCount += 1;
+      pendingCents += Number(r.total_cents || 0);
+    }
+    if (st === 'confirmed') {
+      totalSpentConfirmed += Number(r.total_cents || 0);
+      if (new Date(r.starts_at) >= now) confirmedUpcoming += 1;
+    }
+    if (st === 'cancelled' || st === 'expired') {
+      const ca = r.cancelled_at
+        ? new Date(r.cancelled_at)
+        : r.updated_at
+          ? new Date(r.updated_at)
+          : null;
+      if (ca && ca.getFullYear() === y && ca.getMonth() === mon) {
+        cancelledThisMonth += 1;
+      }
+    }
+  });
+
+  return {
+    pendingCount,
+    pendingCents,
+    confirmedUpcoming,
+    cancelledThisMonth,
+    totalSpentConfirmed,
+  };
+}
+
 router.get('/meeting-rooms/my-bookings', async (req, res) => {
   const m = res.locals.currentMember;
   const { rows } = await pool.query(
-    `SELECT rb.*, mr.name AS room_name
+    `SELECT rb.*, mr.name AS room_name, mr.capacity AS room_capacity
      FROM room_bookings rb
      JOIN meeting_rooms mr ON mr.id = rb.meeting_room_id
      WHERE rb.member_id = $1 AND rb.deleted_at IS NULL
@@ -33,11 +74,25 @@ router.get('/meeting-rooms/my-bookings', async (req, res) => {
      LIMIT 100`,
     [m.id]
   );
+  const enriched = rows.map((r) => {
+    const st = String(r.status || '').toLowerCase();
+    let holdSec = null;
+    if (st === 'pending_payment' && r.payment_deadline_at) {
+      holdSec = Math.max(
+        0,
+        Math.floor((new Date(r.payment_deadline_at).getTime() - Date.now()) / 1000)
+      );
+    }
+    return { ...r, _holdSec: holdSec };
+  });
+  const mrbSummary = myBookingsSummary(rows);
   res.render('member/meeting-rooms-my-bookings', {
     layout: 'layouts/member',
-    title: 'My room bookings',
-    pageSub: 'Hold, pay, and manage meeting room reservations',
-    rows,
+    title: 'My Room Bookings',
+    pageSub: 'Hold, pay, and manage your meeting room reservations',
+    rows: enriched,
+    mrbSummary,
+    showBookRoomCta: true,
     formatDate,
     formatDateTime,
     formatNgn,

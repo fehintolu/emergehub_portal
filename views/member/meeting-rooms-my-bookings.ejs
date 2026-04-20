@@ -1,56 +1,258 @@
-<% if (typeof query !== 'undefined' && query.msg === 'booked') { %>
-  <div class="alert alert-success">Booking created. Complete payment within 2 hours to confirm your slot. <% if (query.ref) { %>Reference: <strong><%= query.ref %></strong>.<% } %></div>
+<% var q = typeof query !== 'undefined' ? query : {}; %>
+<% var sum = typeof mrbSummary !== 'undefined' && mrbSummary ? mrbSummary : {}; %>
+<% function mrbWhen(sa, ea) {
+  var s = new Date(sa);
+  var e = new Date(ea);
+  if (isNaN(s.getTime()) || isNaN(e.getTime())) return { d: '—', range: '' };
+  var d = s.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  var tf = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return { d: d, range: tf.format(s) + ' — ' + tf.format(e) };
+} %>
+<% function mrbDuration(mins) {
+  var m = Number(mins) || 0;
+  if (m >= 60 && m % 60 === 0) { var h = m / 60; return h + ' hour' + (h === 1 ? '' : 's'); }
+  return m + ' min';
+} %>
+<% function mrbFilterDataStatus(st) {
+  var s = String(st || '').toLowerCase();
+  if (s === 'pending_payment') return 'pending_payment';
+  if (s === 'confirmed') return 'confirmed';
+  return 'cancelled';
+} %>
+<% function mrbCardKind(st) {
+  var s = String(st || '').toLowerCase();
+  if (s === 'pending_payment') return 'pending';
+  if (s === 'confirmed') return 'confirmed';
+  return 'cancelled';
+} %>
+<% function mrbStatusLabel(st) {
+  var s = String(st || '').toLowerCase();
+  if (s === 'pending_payment') return 'Pending payment';
+  if (s === 'confirmed') return 'Confirmed';
+  if (s === 'expired') return 'Expired';
+  if (s === 'cancelled') return 'Cancelled';
+  return String(st || '—');
+} %>
+
+<div class="portal-page portal-page--mrb">
+<% if (q.msg === 'cancelled') { %>
+  <div class="portal-flash portal-flash--success">Booking cancelled.</div>
 <% } %>
-<% if (typeof query !== 'undefined' && query.msg === 'cancelled') { %>
-  <div class="alert alert-success">Booking cancelled.</div>
+<% if (q.msg === 'credit') { %>
+  <div class="portal-flash portal-flash--success">Booking cancelled. A credit note was recorded for your account (refunds are processed offline).</div>
 <% } %>
-<% if (typeof query !== 'undefined' && query.msg === 'credit') { %>
-  <div class="alert alert-success">Booking cancelled. A credit note was recorded for your account (refunds are processed offline).</div>
+<% if (q.err === '24h') { %>
+  <div class="portal-flash portal-flash--error">Confirmed bookings can only be cancelled more than 24 hours before the start time.</div>
 <% } %>
-<% if (typeof query !== 'undefined' && query.err === '24h') { %>
-  <div class="alert alert-error">Confirmed bookings can only be cancelled more than 24 hours before the start time.</div>
+<% if (q.err === 'state') { %>
+  <div class="portal-flash portal-flash--error">This booking cannot be changed in its current state.</div>
 <% } %>
-<% if (typeof query !== 'undefined' && query.err === 'state') { %>
-  <div class="alert alert-error">This booking cannot be changed in its current state.</div>
+<% if (q.err === 'notfound') { %>
+  <div class="portal-flash portal-flash--error">That booking was not found.</div>
+<% } %>
+<% if (q.err === 'server') { %>
+  <div class="portal-flash portal-flash--error">Something went wrong. Please try again.</div>
 <% } %>
 
+  <div class="mrb-summary-strip">
+    <div class="mrb-stat-card<%= (sum.pendingCount > 0) ? ' mrb-stat-card--alert' : '' %>">
+      <div class="mrb-stat-label">Pending payment</div>
+      <div class="mrb-stat-value"><%= sum.pendingCount || 0 %></div>
+      <div class="mrb-stat-sub"><%= formatNgn(sum.pendingCents || 0) %> to pay</div>
+    </div>
+    <div class="mrb-stat-card">
+      <div class="mrb-stat-label">Confirmed upcoming</div>
+      <div class="mrb-stat-value"><%= sum.confirmedUpcoming || 0 %></div>
+      <div class="mrb-stat-sub"><% if (!(sum.confirmedUpcoming > 0)) { %>No upcoming bookings<% } else { %>Starting soon<% } %></div>
+    </div>
+    <div class="mrb-stat-card">
+      <div class="mrb-stat-label">Cancelled</div>
+      <div class="mrb-stat-value"><%= sum.cancelledThisMonth || 0 %></div>
+      <div class="mrb-stat-sub">This month</div>
+    </div>
+    <div class="mrb-stat-card">
+      <div class="mrb-stat-label">Total spent</div>
+      <div class="mrb-stat-value"><%= formatNgn(sum.totalSpentConfirmed || 0) %></div>
+      <div class="mrb-stat-sub">All confirmed bookings</div>
+    </div>
+  </div>
+
+  <div class="mrb-filter-row">
+    <div class="mrb-filter-chips" role="tablist" aria-label="Filter bookings">
+      <button type="button" class="mrb-chip is-active" data-mrb-filter="all">All</button>
+      <button type="button" class="mrb-chip" data-mrb-filter="pending_payment">Pending payment</button>
+      <button type="button" class="mrb-chip" data-mrb-filter="confirmed">Confirmed</button>
+      <button type="button" class="mrb-chip" data-mrb-filter="cancelled">Cancelled</button>
+    </div>
+    <select class="mrb-sort-select" id="mrb-sort" aria-label="Sort bookings">
+      <option value="newest">Newest first</option>
+      <option value="oldest">Oldest first</option>
+      <option value="amount">Amount: high to low</option>
+    </select>
+  </div>
+
 <% if (!rows.length) { %>
-  <div class="card"><p class="page-lead" style="margin:0;">You have no room bookings yet. <a href="/meeting-rooms">Browse rooms</a>.</p></div>
+  <div class="mrb-empty-state">
+    <div class="mrb-empty-icon" aria-hidden="true">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 5V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v1M9 12h6M9 16h4"/></svg>
+    </div>
+    <div class="mrb-empty-title">No room bookings yet</div>
+    <p class="mrb-empty-sub">When you book a meeting room, it will show up here with payment and print options.</p>
+    <a href="/meeting-rooms" class="mrb-empty-cta">Browse rooms</a>
+  </div>
 <% } else { %>
-  <div class="card">
-    <table style="width:100%;border-collapse:collapse;">
-      <thead>
-        <tr>
-          <th style="text-align:left;padding:8px;">Room</th>
-          <th style="text-align:left;padding:8px;">When</th>
-          <th style="text-align:left;padding:8px;">Status</th>
-          <th style="text-align:right;padding:8px;">Total</th>
-          <th style="text-align:left;padding:8px;"></th>
-        </tr>
-      </thead>
-      <tbody>
-        <% rows.forEach(function (r) { %>
-          <tr>
-            <td style="padding:8px;vertical-align:top;"><%= r.room_name %></td>
-            <td style="padding:8px;vertical-align:top;"><%= formatDateTime(r.starts_at) %> — <%= formatDateTime(r.ends_at) %></td>
-            <td style="padding:8px;vertical-align:top;"><%= r.status %></td>
-            <td style="padding:8px;vertical-align:top;text-align:right;"><%= formatNgn(r.total_cents) %></td>
-            <td style="padding:8px;vertical-align:top;">
-              <a href="/meeting-rooms/bookings/<%= r.id %>/confirmation">Print</a>
-              <% if (r.status === 'pending_payment' && r.invoice_id) { %>
-                · <a href="/billing?invoice=<%= r.invoice_id %>">Pay invoice</a>
-              <% } %>
-              <% if (r.status === 'pending_payment' || r.status === 'confirmed') { %>
-                <form method="post" action="/meeting-rooms/bookings/<%= r.id %>/cancel" style="display:inline;margin-left:8px;" onsubmit="return confirm('Cancel this booking?');">
-                  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-                  <button type="submit" class="btn" style="padding:4px 10px;font-size:13px;">Cancel</button>
-                </form>
-              <% } %>
-            </td>
-          </tr>
-        <% }); %>
-      </tbody>
-    </table>
+  <div class="mrb-bookings-list" id="mrb-bookings-list">
+    <% rows.forEach(function (r) {
+         var st = String(r.status || '').toLowerCase();
+         var when = mrbWhen(r.starts_at, r.ends_at);
+         var fSt = mrbFilterDataStatus(r.status);
+         var kind = mrbCardKind(r.status);
+         var canCancel = (st === 'pending_payment' || st === 'confirmed');
+         var showPay = st === 'pending_payment' && r.invoice_id;
+         var mutedAmount = (st === 'cancelled' || st === 'expired');
+    %>
+    <article
+      class="mrb-booking-card mrb-booking-card--<%= kind %>"
+      data-mrb-filter-status="<%= fSt %>"
+      data-starts-ts="<%= new Date(r.starts_at).getTime() %>"
+      data-amount="<%= Number(r.total_cents || 0) %>"
+    >
+      <div class="mrb-booking-inner">
+        <div class="mrb-room-icon mrb-room-icon--<%= kind %>" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="2" y="4" width="16" height="13" rx="2"/>
+            <path d="M6 4V3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v1"/>
+            <path d="M7 10h6M7 13h4"/>
+          </svg>
+        </div>
+        <div class="mrb-booking-info">
+          <div class="mrb-booking-room"><%= r.room_name %></div>
+          <div class="mrb-booking-time">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="1" y="2" width="10" height="8" rx="1.5"/><path d="M3 2V1M9 2V1M1 5h10"/></svg>
+            <%= when.d %>
+            <span class="mrb-time-sep">
+              <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="6" cy="6" r="4"/><path d="M6 3.5v3l1.5 1.5"/></svg>
+              <%= when.range %>
+            </span>
+          </div>
+          <div class="mrb-booking-meta">
+            <span class="mrb-meta-tag">
+              <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="6" cy="6" r="4"/><path d="M6 3.5v3l1.5 1.5"/></svg>
+              <%= mrbDuration(r.duration_minutes) %>
+            </span>
+            <% if (r.room_capacity != null) { %>
+            <span class="mrb-meta-tag">
+              <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="5" cy="4" r="1.5"/><path d="M2 9c0-1.7 1.3-3 3-3s3 1.3 3 3"/><circle cx="9" cy="4" r="1.5"/><path d="M9 7.5c1 0 2 .8 2 2.5"/></svg>
+              Capacity <%= r.room_capacity %>
+            </span>
+            <% } %>
+            <% if (r.booking_reference) { %>
+            <span class="mrb-meta-tag mrb-meta-tag--ref">Ref: <%= r.booking_reference %></span>
+            <% } %>
+          </div>
+        </div>
+        <div class="mrb-booking-status">
+          <span class="mrb-status-badge mrb-status-badge--<%= kind %>">
+            <span class="mrb-status-dot" aria-hidden="true"></span>
+            <%= mrbStatusLabel(r.status) %>
+          </span>
+        </div>
+        <div class="mrb-booking-right">
+          <div class="mrb-booking-amount<%= mutedAmount ? ' is-muted' : '' %>"><%= formatNgn(r.total_cents) %></div>
+          <div class="mrb-booking-actions">
+            <a class="mrb-btn-action mrb-btn-outline" href="/meeting-rooms/bookings/<%= r.id %>/confirmation">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 9V3h4M3 3l4 4"/></svg>
+              Print
+            </a>
+            <% if (showPay) { %>
+            <a class="mrb-btn-action mrb-btn-pay" href="/billing?invoice=<%= r.invoice_id %>">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="1" y="3" width="10" height="7" rx="1.5"/><path d="M1 6h10M4 8.5h1.5"/></svg>
+              Pay invoice
+            </a>
+            <% } %>
+            <% if (canCancel) { %>
+            <form method="post" action="/meeting-rooms/bookings/<%= r.id %>/cancel" class="mrb-cancel-form" onsubmit="return confirm('Cancel this booking?');">
+              <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
+              <button type="submit" class="mrb-btn-action mrb-btn-danger">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 3h8M5 3V2h2v1M9 3l-.5 7H3.5L3 3"/><path d="M5 5v3M7 5v3"/></svg>
+                Cancel
+              </button>
+            </form>
+            <% } %>
+          </div>
+        </div>
+      </div>
+      <% if (st === 'pending_payment' && r._holdSec > 0) { %>
+      <div class="mrb-countdown-bar" data-mrb-countdown data-seconds="<%= r._holdSec %>">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="5.5"/><path d="M7 4v3l2 1.5"/></svg>
+        <span>Slot held for <span class="mrb-countdown-time">—</span> — pay now to confirm your booking</span>
+      </div>
+      <% } %>
+    </article>
+    <% }); %>
   </div>
 <% } %>
-<p style="margin-top:16px;"><a href="/meeting-rooms">Book a room</a> · <a href="/dashboard">Dashboard</a></p>
+
+  <div class="portal-bottom-links mrb-bottom-links">
+    <a class="portal-bottom-link" href="/meeting-rooms">Book a room</a>
+    <span class="portal-bottom-sep">·</span>
+    <a class="portal-bottom-link" href="/dashboard">Dashboard</a>
+  </div>
+</div>
+
+<script>
+(function () {
+  var chips = document.querySelectorAll('[data-mrb-filter]');
+  var cards = document.querySelectorAll('.mrb-booking-card');
+  chips.forEach(function (chip) {
+    chip.addEventListener('click', function () {
+      var f = chip.getAttribute('data-mrb-filter') || 'all';
+      chips.forEach(function (c) { c.classList.toggle('is-active', c === chip); });
+      cards.forEach(function (card) {
+        var st = card.getAttribute('data-mrb-filter-status') || '';
+        if (f === 'all') card.hidden = false;
+        else card.hidden = st !== f;
+      });
+    });
+  });
+
+  var list = document.getElementById('mrb-bookings-list');
+  var sortSel = document.getElementById('mrb-sort');
+  function applySort() {
+    if (!list || !sortSel) return;
+    var mode = sortSel.value || 'newest';
+    var items = Array.from(list.querySelectorAll('.mrb-booking-card'));
+    items.sort(function (a, b) {
+      var ta = parseFloat(a.getAttribute('data-starts-ts')) || 0;
+      var tb = parseFloat(b.getAttribute('data-starts-ts')) || 0;
+      var aa = parseFloat(a.getAttribute('data-amount')) || 0;
+      var ba = parseFloat(b.getAttribute('data-amount')) || 0;
+      if (mode === 'oldest') return ta - tb;
+      if (mode === 'amount') return ba - aa;
+      return tb - ta;
+    });
+    items.forEach(function (el) { list.appendChild(el); });
+  }
+  if (sortSel) sortSel.addEventListener('change', applySort);
+
+  function pad(n) { return String(n).padStart(2, '0'); }
+  document.querySelectorAll('[data-mrb-countdown]').forEach(function (bar) {
+    var sec = parseInt(bar.getAttribute('data-seconds'), 10);
+    var el = bar.querySelector('.mrb-countdown-time');
+    if (!el || !(sec > 0)) return;
+    function tick() {
+      if (sec <= 0) {
+        el.textContent = '0:00:00';
+        return;
+      }
+      var h = Math.floor(sec / 3600);
+      var m = Math.floor((sec % 3600) / 60);
+      var s = sec % 60;
+      el.textContent = h + ':' + pad(m) + ':' + pad(s);
+      sec -= 1;
+      setTimeout(tick, 1000);
+    }
+    tick();
+  });
+})();
+</script>

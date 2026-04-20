@@ -67,6 +67,12 @@
             <span class="notif-dot" aria-hidden="true"></span>
           <% } %>
         </a>
+        <% if (typeof showBookRoomCta !== 'undefined' && showBookRoomCta) { %>
+        <a href="/meeting-rooms" class="portal-topbar-cta">
+          <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 2v10M2 7h10"/></svg>
+          Book a room
+        </a>
+        <% } %>
       </div>
     </header>
     <% } %>
