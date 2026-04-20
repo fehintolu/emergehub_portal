@@ -151,7 +151,8 @@ router.post('/meeting-rooms/bookings/:bookingId/cancel', requireValidCsrf, async
 router.get('/meeting-rooms', async (req, res) => {
   const m = res.locals.currentMember;
   const { rows } = await pool.query(
-    `SELECT id, name, description, capacity, hourly_rate_cents, amenities, photo_path
+    `SELECT id, name, description, capacity, hourly_rate_cents, full_day_rate_cents,
+            amenities, photo_path, room_product_kind, consumes_plan_credits, slug
      FROM meeting_rooms
      WHERE active = true AND deleted_at IS NULL
      ORDER BY sort_order, name`

@@ -9,15 +9,17 @@
 <body>
   <%- include('../partials/member-sidebar') %>
 
-  <% var _ws = typeof memberPath !== 'undefined' && memberPath === '/workspace'; %>
-  <div class="main<%= _ws ? ' main--workspace' : '' %>">
-    <header class="page-header anim anim-1<%= _ws ? ' workspace-topbar' : '' %>">
+  <% var mp = typeof memberPath !== 'undefined' ? String(memberPath) : ''; %>
+  <% var _theme = mp === '/workspace' || mp.indexOf('/meeting-rooms') === 0 || mp.indexOf('/billing') === 0 || mp === '/services' || mp.indexOf('/services/') === 0; %>
+  <% var _workspaceOnly = mp === '/workspace'; %>
+  <div class="main<%= _theme ? ' main--portal-theme' : '' %>">
+    <header class="page-header anim anim-1<%= _theme ? ' portal-topbar' : '' %>">
       <div class="page-header-mini">
-        <div class="page-title<%= _ws ? ' workspace-page-title' : '' %>"><%= title %></div>
+        <div class="page-title<%= _theme ? ' portal-page-title' : '' %>"><%= title %></div>
         <div class="page-sub"><%= typeof pageSub === 'string' && pageSub ? pageSub : (typeof todaySubtitle !== 'undefined' ? todaySubtitle : '') %></div>
       </div>
       <div class="header-toolbar topbar-actions">
-        <% if (_ws) { %>
+        <% if (_workspaceOnly) { %>
         <a class="icon-btn" href="/meeting-rooms" title="Search" aria-label="Book a meeting room">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M11 11l2.5 2.5"/></svg>
         </a>
@@ -35,7 +37,7 @@
       </div>
     </header>
 
-    <div class="member-body<%= _ws ? ' member-body--workspace' : '' %>">
+    <div class="member-body<%= _theme ? ' member-body--portal-theme' : '' %>">
       <%- body %>
     </div>
   </div>

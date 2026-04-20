@@ -1,32 +1,36 @@
-<h2 class="page-title">Request: <%= service.name %></h2>
-<p class="page-lead">Category: <%= service.category_name %></p>
+<div class="portal-page portal-page--request">
+  <div class="portal-request-hero">
+    <h2 class="portal-request-hero-title">Request: <%= service.name %></h2>
+    <p class="portal-request-hero-sub">Category: <%= service.category_name %></p>
+  </div>
 <% var _pc = Number(service.portal_price_cents || 0); %>
 <% if (_pc > 0) { %>
-  <div class="card" style="margin-bottom:16px;">
-    <p style="margin:0;font-size:15px;">Quoted fee: <strong><%= formatNgn(_pc) %></strong></p>
-    <p class="page-lead" style="margin:8px 0 0;">After you submit, an invoice will be created and you can pay from this request or Billing.</p>
+  <div class="portal-panel portal-panel--quote">
+    <p class="portal-quote-line">Quoted fee: <strong><%= formatNgn(_pc) %></strong></p>
+    <p class="portal-panel-muted" style="margin:0;">After you submit, an invoice will be created and you can pay from this request or Billing.</p>
   </div>
 <% } else { %>
-  <p class="page-lead">No fixed fee on this service — our team will confirm pricing if needed.</p>
+  <p class="portal-panel-muted" style="margin-bottom:16px;">No fixed fee on this service — our team will confirm pricing if needed.</p>
 <% } %>
 <% if (typeof query !== 'undefined' && query.err === 'upload') { %>
-  <div class="alert alert-error">File upload failed validation.</div>
+  <div class="portal-flash portal-flash--error">File upload failed validation.</div>
 <% } %>
-<div class="card">
-  <form method="post" action="/services/request/<%= service.id %>" enctype="multipart/form-data">
-    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-    <div class="form-row">
-      <label>Describe your requirement</label>
-      <textarea name="description" required></textarea>
-    </div>
-    <div class="form-row">
-      <label>Additional details</label>
-      <textarea name="extra_details" placeholder="CAC details, virtual office needs, etc."></textarea>
-    </div>
-    <div class="form-row">
-      <label>Attachment (optional, PDF/JPG/PNG/DOCX, max 10MB)</label>
-      <input type="file" name="attachment" accept=".pdf,.jpg,.jpeg,.png,.docx" />
-    </div>
-    <button type="submit" class="btn btn-primary">Submit request</button>
-  </form>
+  <div class="portal-panel">
+    <form method="post" action="/services/request/<%= service.id %>" enctype="multipart/form-data" class="portal-themed-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+      <div class="form-row">
+        <label>Describe your requirement</label>
+        <textarea name="description" required rows="5"></textarea>
+      </div>
+      <div class="form-row">
+        <label>Additional details</label>
+        <textarea name="extra_details" rows="4" placeholder="CAC details, virtual office needs, etc."></textarea>
+      </div>
+      <div class="form-row">
+        <label>Attachment (optional, PDF/JPG/PNG/DOCX, max 10MB)</label>
+        <input type="file" name="attachment" accept=".pdf,.jpg,.jpeg,.png,.docx" />
+      </div>
+      <button type="submit" class="portal-btn-primary">Submit request</button>
+    </form>
+  </div>
 </div>

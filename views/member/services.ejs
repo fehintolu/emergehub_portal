@@ -1,45 +1,49 @@
-<div class="tabs">
-  <a href="/services?tab=mine" class="<%= tab === 'mine' ? 'is-active' : '' %>">My Services</a>
-  <a href="/services?tab=request" class="<%= tab === 'request' ? 'is-active' : '' %>">Request a Service</a>
-</div>
+<div class="portal-page portal-page--services">
+  <div class="portal-tabs">
+    <a href="/services?tab=mine" class="portal-tab<%= tab === 'mine' ? ' is-active' : '' %>">My Services</a>
+    <a href="/services?tab=request" class="portal-tab<%= tab === 'request' ? ' is-active' : '' %>">Request a Service</a>
+  </div>
 
 <% if (tab === 'mine') { %>
   <% if (!mine.length) { %>
-    <div class="activity-card">
-      <div class="activity-empty">
-        <p>No service requests yet</p>
-        <small><a href="/services?tab=request" class="section-link" style="display:inline-block;margin-top:8px;">Browse services</a></small>
-      </div>
+    <div class="portal-panel portal-panel--empty">
+      <p class="portal-panel-muted">No service requests yet</p>
+      <p class="portal-panel-foot"><a href="/services?tab=request" class="portal-inline-link">Browse services</a></p>
     </div>
   <% } %>
   <% mine.forEach(function (r) { %>
-    <a href="/services/<%= r.id %>" style="text-decoration:none;color:inherit;display:block;margin-bottom:12px;">
-      <div class="card" style="margin-bottom:0;transition:transform 0.18s ease, box-shadow 0.18s ease;">
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-          <strong><%= r.service_name %></strong>
-          <span class="badge"><%= r.status %></span>
-          <% if (r.action_required_member) { %><span class="badge badge-warn">Action required</span><% } %>
+    <a href="/services/<%= r.id %>" class="portal-service-link">
+      <div class="portal-service-card">
+        <div class="portal-service-card-head">
+          <strong class="portal-service-name"><%= r.service_name %></strong>
+          <span class="portal-pill"><%= r.status %></span>
+          <% if (r.action_required_member) { %><span class="portal-pill portal-pill--warn">Action required</span><% } %>
         </div>
-        <p style="margin:8px 0 0;font-size:13px;color:var(--text-secondary);"><%= r.category_name %> · Requested <%= formatDateTime(r.created_at) %></p>
+        <p class="portal-service-meta"><%= r.category_name %> · Requested <%= formatDateTime(r.created_at) %></p>
       </div>
     </a>
   <% }); %>
 <% } else { %>
   <% cats.forEach(function (c, ci) { %>
-    <div class="section-header" style="margin-top: <%= ci === 0 ? '0' : '28px' %>;">
-      <span class="section-title"><%= c.name %></span>
+    <div class="portal-section-head<%= ci === 0 ? ' portal-section-head--first' : '' %>">
+      <h2 class="portal-section-title"><%= c.name %></h2>
+      <% if (c.tagline) { %><p class="portal-section-tagline"><%= c.tagline %></p><% } %>
     </div>
-    <% if (c.tagline) { %><p class="page-lead" style="margin-top:-8px;"><%= c.tagline %></p><% } %>
     <% services.filter(function (s) { return s.category_id === c.id && s.booking_mode !== 'plan_booking'; }).forEach(function (s) { %>
-      <div class="card" style="margin-bottom:16px;">
-        <div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:10px;justify-content:space-between;">
-          <strong><%= s.name %></strong>
+      <div class="portal-request-card">
+        <div class="portal-request-card-head">
+          <strong class="portal-request-title"><%= s.name %></strong>
           <% var pc = Number(s.portal_price_cents || 0); %>
-          <% if (pc > 0) { %><span class="badge" style="font-weight:600;"><%= formatNgn(pc) %></span><% } else { %><span class="badge">Quote</span><% } %>
+          <% if (pc > 0) { %>
+            <span class="portal-price-tag"><%= formatNgn(pc) %></span>
+          <% } else { %>
+            <span class="portal-pill">Quote</span>
+          <% } %>
         </div>
-        <p style="margin:8px 0 16px;color:var(--text-secondary);font-size:14px;line-height:1.5;"><%= s.description %></p>
-        <a class="btn btn-primary" href="/services/request/<%= s.id %>">Request</a>
+        <p class="portal-request-desc"><%= s.description %></p>
+        <a class="portal-btn-primary" href="/services/request/<%= s.id %>">Request</a>
       </div>
     <% }); %>
   <% }); %>
 <% } %>
+</div>

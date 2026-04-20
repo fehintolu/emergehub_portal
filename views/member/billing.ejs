@@ -1,88 +1,89 @@
 <% var invList = (typeof outstanding !== 'undefined' && outstanding && Array.isArray(outstanding)) ? outstanding : []; %>
 <% var histList = (typeof history !== 'undefined' && history && Array.isArray(history)) ? history : []; %>
+<div class="portal-page portal-page--billing">
 <% if (typeof bookedBanner !== 'undefined' && bookedBanner) { %>
-  <div class="alert alert-success" style="margin-bottom:16px;">
+  <div class="portal-flash portal-flash--success">
     Meeting room booking created. Pay within 2 hours to confirm your slot.
     <% if (typeof bookingRef === 'string' && bookingRef) { %> Reference: <strong><%= bookingRef %></strong>.<% } %>
   </div>
 <% } %>
 <% if (typeof invoiceFocus === 'string' && invoiceFocus && !invList.some(function (i) { return String(i.id) === invoiceFocus; })) { %>
-  <div class="alert alert-error" style="margin-bottom:16px;">That invoice is not in your outstanding list (it may already be paid or cancelled).</div>
+  <div class="portal-flash portal-flash--error">That invoice is not in your outstanding list (it may already be paid or cancelled).</div>
 <% } %>
-<div class="section-header" style="margin-top:0;">
-  <span class="section-title">Outstanding invoices</span>
-</div>
+
+  <div class="portal-section-head">
+    <h2 class="portal-section-title">Outstanding invoices</h2>
+  </div>
 <% if (!invList.length) { %>
-  <div class="activity-card" style="margin-bottom:24px;">
-    <div class="activity-empty" style="padding:32px 20px;">
-      <p>None — you are up to date.</p>
-    </div>
+  <div class="portal-panel portal-panel--empty">
+    <p class="portal-panel-muted">None — you are up to date.</p>
   </div>
 <% } %>
 <% invList.forEach(function (inv) { %>
-  <div class="card" id="invoice-<%= inv.id %>" style="<%= inv.status === 'overdue' ? 'border:2px solid #b00020;' : '' %><%= (typeof invoiceFocus === 'string' && invoiceFocus === String(inv.id)) ? 'box-shadow:0 0 0 3px rgba(97,5,54,0.35);' : '' %>">
-    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;">
-      <strong><%= inv.invoice_number %></strong>
-      <span class="badge"><%= inv.status %></span>
+  <div class="portal-panel portal-panel--invoice<%= inv.status === 'overdue' ? ' is-overdue' : '' %><%= (typeof invoiceFocus === 'string' && invoiceFocus === String(inv.id)) ? ' is-focused' : '' %>" id="invoice-<%= inv.id %>">
+    <div class="portal-invoice-head">
+      <strong class="portal-invoice-num"><%= inv.invoice_number %></strong>
+      <span class="portal-pill"><%= inv.status %></span>
     </div>
-    <p style="margin:10px 0;"><%= formatNgn(inv.total_cents) %> · Due <%= formatDate(inv.due_date) %></p>
+    <p class="portal-invoice-amount"><%= formatNgn(inv.total_cents) %> · Due <%= formatDate(inv.due_date) %></p>
     <% var ex = typeof invExtras !== 'undefined' && invExtras ? (invExtras[String(inv.id)] || invExtras[inv.id]) : null; %>
     <% if (ex && ex.links && ex.links.length) { %>
-      <p style="font-size:13px;margin:0 0 8px;"><strong>Includes</strong>:
+      <p class="portal-invoice-meta"><strong>Includes</strong>:
         <% ex.links.forEach(function (l, idx) { %><%= idx ? ', ' : '' %><%= l.service_name || l.sr_title || 'Service' %><% }); %>
       </p>
     <% } %>
     <% if (ex && ex.room) { %>
-      <p style="font-size:13px;margin:0 0 8px;"><strong>Meeting room</strong>: <%= ex.room.room_name %> (<%= ex.room.booking_reference %>)</p>
+      <p class="portal-invoice-meta"><strong>Meeting room</strong>: <%= ex.room.room_name %> (<%= ex.room.booking_reference %>)</p>
     <% } %>
-    <p style="margin:0 0 8px;"><a href="/billing/invoices/<%= inv.id %>/print" target="_blank" rel="noopener">Print invoice</a></p>
+    <p class="portal-invoice-meta"><a href="/billing/invoices/<%= inv.id %>/print" target="_blank" rel="noopener" class="portal-inline-link">Print invoice</a></p>
     <% if (['unpaid','sent','overdue'].includes(inv.status)) { %>
-      <button type="button" class="btn btn-primary pay-now" data-invoice="<%= inv.id %>">Pay now</button>
-      <details style="margin-top:12px;">
-        <summary style="cursor:pointer;font-weight:600;color:var(--brand);font-size:13px;">I paid by bank transfer</summary>
-        <form method="post" action="/billing/manual" enctype="multipart/form-data" style="margin-top:12px;">
+      <button type="button" class="portal-btn-primary pay-now" data-invoice="<%= inv.id %>">Pay now</button>
+      <details class="portal-details">
+        <summary>I paid by bank transfer</summary>
+        <form method="post" action="/billing/manual" enctype="multipart/form-data" class="portal-manual-form">
           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
           <input type="hidden" name="invoice_id" value="<%= inv.id %>" />
-          <p class="page-lead" style="margin-bottom:8px;">Upload proof (PDF/JPG/PNG/DOCX)</p>
+          <p class="portal-form-hint">Upload proof (PDF/JPG/PNG/DOCX)</p>
           <div class="form-row"><input type="file" name="proof" required accept=".pdf,.jpg,.jpeg,.png,.docx" /></div>
-          <button type="submit" class="btn btn-secondary">Submit</button>
+          <button type="submit" class="portal-btn-secondary">Submit</button>
         </form>
       </details>
     <% } %>
     <% if (inv.status === 'awaiting_confirmation') { %>
-      <p style="margin-top:10px;"><em>Awaiting confirmation from EmergeHub.</em></p>
+      <p class="portal-panel-muted" style="margin-top:10px;"><em>Awaiting confirmation from EmergeHub.</em></p>
     <% } %>
   </div>
 <% }); %>
 
-<div class="section-header">
-  <span class="section-title">Bank transfer</span>
-</div>
-<div class="card">
-  <p><strong><%= bankName || '—' %></strong></p>
-  <p>Account name: <%= accountName %></p>
-  <p>Account number: <%= accountNumber || '—' %></p>
-</div>
+  <div class="portal-section-head">
+    <h2 class="portal-section-title">Bank transfer</h2>
+  </div>
+  <div class="portal-panel">
+    <p class="portal-bank-line"><strong><%= bankName || '—' %></strong></p>
+    <p class="portal-bank-line">Account name: <%= accountName %></p>
+    <p class="portal-bank-line">Account number: <%= accountNumber || '—' %></p>
+  </div>
 
-<div class="section-header">
-  <span class="section-title">Payment history</span>
-</div>
-<div class="table-wrap">
-  <table class="data">
-    <thead><tr><th>Date</th><th>Invoice</th><th>Amount</th><th>Method</th><th>Status</th><th>Receipt</th></tr></thead>
-    <tbody>
-      <% histList.forEach(function (p) { %>
-        <tr>
-          <td><%= formatDateTime(p.created_at) %></td>
-          <td><%= p.invoice_number %></td>
-          <td><%= formatNgn(p.amount_cents) %></td>
-          <td><%= p.method %></td>
-          <td><%= p.status %></td>
-          <td><% if (p.status === 'completed' && p.receipt_number) { %><a href="/billing/receipt/<%= p.id %>">Receipt</a><% } else { %>—<% } %></td>
-        </tr>
-      <% }); %>
-    </tbody>
-  </table>
+  <div class="portal-section-head">
+    <h2 class="portal-section-title">Payment history</h2>
+  </div>
+  <div class="portal-table-wrap">
+    <table class="portal-data-table">
+      <thead><tr><th>Date</th><th>Invoice</th><th>Amount</th><th>Method</th><th>Status</th><th>Receipt</th></tr></thead>
+      <tbody>
+        <% histList.forEach(function (p) { %>
+          <tr>
+            <td><%= formatDateTime(p.created_at) %></td>
+            <td><%= p.invoice_number %></td>
+            <td><%= formatNgn(p.amount_cents) %></td>
+            <td><%= p.method %></td>
+            <td><%= p.status %></td>
+            <td><% if (p.status === 'completed' && p.receipt_number) { %><a href="/billing/receipt/<%= p.id %>" class="portal-inline-link">Receipt</a><% } else { %>—<% } %></td>
+          </tr>
+        <% }); %>
+      </tbody>
+    </table>
+  </div>
 </div>
 
 <script>
