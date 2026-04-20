@@ -1,132 +1,396 @@
+<% 
+  var primaryPack = null;
+  if (typeof invoicesWithItems !== 'undefined' && invoicesWithItems && invoicesWithItems.length) {
+    primaryPack = invoicesWithItems.find(function (p) { return sr.invoice_id && String(p.invoice.id) === String(sr.invoice_id); })
+      || invoicesWithItems[0];
+  }
+  var primaryInv = primaryPack ? primaryPack.invoice : null;
+  var primaryItems = primaryPack && primaryPack.items ? primaryPack.items : [];
+  var planTitle = '';
+  try {
+    var dj = sr.detail_json;
+    if (dj == null) dj = null;
+    else if (typeof dj === 'string') dj = JSON.parse(dj);
+    if (dj && dj.plan_title) planTitle = String(dj.plan_title);
+  } catch (e) {}
+  if (!planTitle && typeof bookingPlan !== 'undefined' && bookingPlan && bookingPlan.title) planTitle = bookingPlan.title;
+  var durLabel = '';
+  if (typeof bookingPlan !== 'undefined' && bookingPlan) {
+    var _dv = Number(bookingPlan.duration_value);
+    var _du = String(bookingPlan.duration_unit || '').toLowerCase();
+    if (_dv > 0 && ['hour','day','month'].indexOf(_du) >= 0) {
+      durLabel = _dv + ' ' + (_du === 'month' ? (_dv === 1 ? 'month' : 'months') : _du === 'day' ? (_dv === 1 ? 'day' : 'days') : (_dv === 1 ? 'hour' : 'hours'));
+    }
+  }
+  var stLow = String(sr.status || '').toLowerCase();
+  var statusPillClass = 'sr-status-default';
+  if (['completed','done','paid','confirmed','closed','fulfilled'].indexOf(stLow) >= 0) statusPillClass = 'sr-status-success';
+  else if (['submitted','booked','pending','in_progress','awaiting_payment','sent'].indexOf(stLow) >= 0) statusPillClass = 'sr-status-warn';
+  var invPaid = primaryInv && ['paid','completed','partially_paid'].indexOf(String(primaryInv.status || '').toLowerCase()) >= 0;
+  var invUnpaid = primaryInv && ['unpaid','sent','overdue','awaiting_confirmation'].indexOf(String(primaryInv.status || '').toLowerCase()) >= 0;
+  var dueSoon = false;
+  var dueDaysLeft = null;
+  if (primaryInv && primaryInv.due_date) {
+    var dueMs = new Date(primaryInv.due_date).getTime() - Date.now();
+    dueDaysLeft = Math.ceil(dueMs / 86400000);
+    dueSoon = dueDaysLeft <= 7 && dueDaysLeft >= 0;
+  }
+%>
+
+<div class="sr-detail-page">
+  <div class="sr-page-layout">
+    <div class="sr-left-col">
+
 <% if (sr.action_required_member) { %>
-  <div class="alert alert-error" style="border-left:4px solid var(--accent);">
-    <strong>Action required</strong> — please check messages below or upload requested documents.
-  </div>
+      <div class="portal-flash portal-flash--error sr-flash">
+        <strong>Action required</strong> — please check updates below or upload requested documents.
+      </div>
 <% } %>
+
+      <div class="sr-service-hero">
+        <div class="sr-hero-band"></div>
+        <div class="sr-hero-body">
+          <div class="sr-hero-top">
+            <div class="sr-hero-left">
+              <div class="sr-hero-icon" aria-hidden="true">
+                <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <rect x="3" y="5" width="16" height="13" rx="2"/>
+                  <path d="M7 3v4M15 3v4M3 10h16"/>
+                  <path d="M7 14h8M7 17h5"/>
+                </svg>
+              </div>
+              <div>
+                <h1 class="sr-hero-title"><%= sr.service_name %></h1>
+                <div class="sr-hero-category">
+                  <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 9a4 4 0 0 1 8 0"/><circle cx="6" cy="5" r="2"/></svg>
+                  <%= sr.category_name %>
+                </div>
+              </div>
+            </div>
+            <span class="sr-status-pill <%= statusPillClass %>"><span class="sr-status-dot"></span><%= sr.status %></span>
+          </div>
+
 <% if (sr.service_start_date && sr.service_end_date) { %>
-  <div class="card anim anim-2" style="border-left:4px solid var(--accent);margin-bottom:16px;">
-    <h3 class="page-title" style="margin:0 0 8px;font-size:1.05rem;">Service period</h3>
-    <p class="page-lead" style="margin:0;">Your agreed service runs from <strong><%= formatDate(sr.service_start_date) %></strong> to <strong><%= formatDate(sr.service_end_date) %></strong>.</p>
-  </div>
-<% } %>
-<% if (typeof bookingPlan !== 'undefined' && bookingPlan) { %>
+          <div class="sr-access-notice">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v4M11 1v4M2 7h12"/></svg>
+            Your agreed service runs from <strong><%= formatDate(sr.service_start_date) %></strong> to <strong><%= formatDate(sr.service_end_date) %></strong>.
+          </div>
+<% } else if (typeof bookingPlan !== 'undefined' && bookingPlan) { %>
   <% var _dv = Number(bookingPlan.duration_value); var _du = String(bookingPlan.duration_unit || '').toLowerCase(); %>
-  <% var _durOk = _dv > 0 && ['hour','day','month'].includes(_du); %>
+  <% var _durOk = _dv > 0 && ['hour','day','month'].indexOf(_du) >= 0; %>
   <% if (_durOk && sr.access_started_at) { %>
-    <div class="card anim anim-2" style="border-left:4px solid var(--green);margin-bottom:16px;">
-      <h3 class="page-title" style="margin:0 0 8px;font-size:1.05rem;">Your access</h3>
-      <p class="page-lead" style="margin:0;">From <strong><%= formatDateTime(sr.access_started_at) %></strong> to <strong><%= formatDateTime(sr.access_ends_at) %></strong>.</p>
-    </div>
+          <div class="sr-access-notice">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 5v4M8 11v.5"/></svg>
+            Your access runs from <strong><%= formatDateTime(sr.access_started_at) %></strong> to <strong><%= formatDateTime(sr.access_ends_at) %></strong>.
+          </div>
   <% } else if (_durOk && !sr.access_started_at) { %>
-    <div class="card anim anim-2" style="margin-bottom:16px;">
-      <p class="page-lead" style="margin:0;">This booking includes <strong><%= _dv %></strong> <%= _du === 'month' ? (_dv === 1 ? 'month' : 'months') : _du === 'day' ? (_dv === 1 ? 'day' : 'days') : (_dv === 1 ? 'hour' : 'hours') %> of access. Your access window will appear here once payment is confirmed.</p>
-    </div>
+          <div class="sr-access-notice">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 5v4M8 11v.5"/></svg>
+            This booking includes <strong><%= _dv %></strong> <%= _du === 'month' ? (_dv === 1 ? 'month' : 'months') : _du === 'day' ? (_dv === 1 ? 'day' : 'days') : (_dv === 1 ? 'hour' : 'hours') %> of access. Your access window will appear here once payment is confirmed.
+          </div>
   <% } %>
 <% } %>
+
 <% if (typeof meetingCredits !== 'undefined' && meetingCredits && (meetingCredits.granted > 0 || meetingCredits.available > 0)) { %>
-  <div class="card anim anim-2" style="margin-bottom:16px;border-left:4px solid var(--brand);">
-    <p class="page-lead" style="margin:0;">Meeting room credits this month: <strong><%= meetingCredits.available %></strong> min remaining of <%= meetingCredits.granted %> (<%= meetingCredits.used %> used). Book eligible rooms under <a href="/meeting-rooms" class="section-link">Meeting rooms</a>.</p>
-  </div>
+          <div class="sr-credits-strip">
+            Meeting room credits this month: <strong><%= meetingCredits.available %></strong> min remaining of <%= meetingCredits.granted %> (<%= meetingCredits.used %> used).
+            <a href="/meeting-rooms" class="portal-inline-link">Book a room</a>
+          </div>
 <% } %>
-<% if (typeof invoicesWithItems !== 'undefined' && invoicesWithItems.length) { %>
-  <% invoicesWithItems.forEach(function (pack) { var invoice = pack.invoice; var invoiceItems = pack.items; %>
-    <div class="card anim anim-2" style="border-left:4px solid var(--accent);margin-bottom:20px;">
-      <div class="section-header" style="margin-top:0;">
-        <span class="section-title">Invoice</span>
+
+          <div class="sr-meta-row">
+            <div class="sr-meta-item">
+              <div class="sr-meta-label">Requested</div>
+              <div class="sr-meta-value"><%= formatDateTime(sr.created_at) %></div>
+            </div>
+            <div class="sr-meta-item">
+              <div class="sr-meta-label">Last updated</div>
+              <div class="sr-meta-value"><%= formatDateTime(sr.updated_at) %></div>
+            </div>
+            <% if (planTitle) { %>
+            <div class="sr-meta-item">
+              <div class="sr-meta-label">Plan</div>
+              <div class="sr-meta-value"><%= planTitle %></div>
+            </div>
+            <% } %>
+            <% if (durLabel) { %>
+            <div class="sr-meta-item">
+              <div class="sr-meta-label">Duration</div>
+              <div class="sr-meta-value"><%= durLabel %></div>
+            </div>
+            <% } %>
+          </div>
+        </div>
       </div>
-      <p style="margin:8px 0 4px;"><strong><%= invoice.invoice_number %></strong> · <%= formatNgn(invoice.total_cents) %></p>
-      <p class="page-lead" style="margin:0 0 12px;">Due <%= formatDate(invoice.due_date) %> · <span class="badge"><%= invoice.status %></span>
-        · <a href="/billing/invoices/<%= invoice.id %>/print" target="_blank" rel="noopener">Print</a></p>
-      <% if (invoiceItems && invoiceItems.length) { %>
-        <ul class="plain-list" style="margin-bottom:12px;">
-          <% invoiceItems.forEach(function (it) { %>
-            <li><%= it.description %> — <strong><%= formatNgn(it.amount_cents) %></strong></li>
+
+      <div class="sr-card">
+        <div class="sr-card-header">
+          <h2 class="sr-card-title">Timeline</h2>
+        </div>
+        <div class="sr-card-body">
+          <div class="sr-timeline">
+            <% if (updates && updates.length) { %>
+              <% updates.forEach(function (u, ui) { %>
+            <div class="sr-timeline-item">
+              <div class="sr-tl-left">
+                <div class="sr-tl-dot done">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 6l3 3 5-5"/></svg>
+                </div>
+                <div class="sr-tl-line"></div>
+              </div>
+              <div class="sr-tl-content">
+                <div class="sr-tl-event"><%= u.stage %></div>
+                <div class="sr-tl-time"><%= formatDateTime(u.created_at) %></div>
+                <% if (u.note) { %><div class="sr-tl-note"><%= u.note %></div><% } %>
+              </div>
+            </div>
+              <% }); %>
+            <% } else { %>
+            <div class="sr-timeline-item">
+              <div class="sr-tl-left">
+                <div class="sr-tl-dot done"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 6l3 3 5-5"/></svg></div>
+                <div class="sr-tl-line"></div>
+              </div>
+              <div class="sr-tl-content">
+                <div class="sr-tl-event">Request created</div>
+                <div class="sr-tl-time"><%= formatDateTime(sr.created_at) %></div>
+              </div>
+            </div>
+            <% } %>
+
+            <% if (primaryInv) { %>
+            <div class="sr-timeline-item">
+              <div class="sr-tl-left">
+                <div class="sr-tl-dot <%= invPaid ? 'done' : 'done' %>">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 6l3 3 5-5"/></svg>
+                </div>
+                <div class="sr-tl-line"></div>
+              </div>
+              <div class="sr-tl-content">
+                <div class="sr-tl-event">Invoice <%= invPaid ? 'issued' : 'created' %></div>
+                <div class="sr-tl-time"><%= formatDateTime(primaryInv.created_at) %></div>
+                <div class="sr-tl-note">Invoice <%= primaryInv.invoice_number %> for <%= formatNgn(primaryInv.total_cents) %>.</div>
+              </div>
+            </div>
+            <div class="sr-timeline-item">
+              <div class="sr-tl-left">
+                <div class="sr-tl-dot <%= invUnpaid ? 'pending' : (invPaid ? 'done' : 'future') %>">
+                  <% if (invUnpaid) { %>
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="6" cy="6" r="4"/><path d="M6 3.5v3l1.5 1.5"/></svg>
+                  <% } else if (invPaid) { %>
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 6l3 3 5-5"/></svg>
+                  <% } else { %>
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="6" cy="6" r="4"/></svg>
+                  <% } %>
+                </div>
+                <div class="sr-tl-line"></div>
+              </div>
+              <div class="sr-tl-content">
+                <div class="sr-tl-event"><%= invUnpaid ? 'Awaiting payment' : (invPaid ? 'Payment received' : 'Payment') %></div>
+                <div class="sr-tl-time"><% if (primaryInv.due_date && invUnpaid) { %>Due <%= formatDate(primaryInv.due_date) %><% } else { %><%= formatDateTime(primaryInv.updated_at || primaryInv.created_at) %><% } %></div>
+                <div class="sr-tl-note"><%= invUnpaid ? 'Complete payment to confirm your booking.' : (invPaid ? 'Thank you — your payment is recorded.' : '') %></div>
+              </div>
+            </div>
+            <% } %>
+
+            <div class="sr-timeline-item">
+              <div class="sr-tl-left">
+                <div class="sr-tl-dot <%= sr.access_started_at ? 'done' : 'future' %>">
+                  <% if (sr.access_started_at) { %>
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 6l3 3 5-5"/></svg>
+                  <% } else { %>
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2" y="3" width="8" height="7" rx="1"/><path d="M4 1v3M8 1v3M2 6h8"/></svg>
+                  <% } %>
+                </div>
+              </div>
+              <div class="sr-tl-content">
+                <div class="sr-tl-event <%= sr.access_started_at ? '' : 'is-muted' %>">Access confirmed</div>
+                <div class="sr-tl-time"><% if (sr.access_started_at) { %><%= formatDateTime(sr.access_started_at) %><% } else { %>Pending payment<% } %></div>
+                <div class="sr-tl-note">Your access window is set once payment is confirmed.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sr-card">
+        <div class="sr-card-header">
+          <h2 class="sr-card-title">Updates</h2>
+        </div>
+        <div class="sr-card-body">
+          <% if (updates && updates.length) { %>
+          <div class="sr-updates">
+            <% updates.forEach(function (u) { %>
+            <div class="sr-update-item">
+              <div class="sr-update-time"><%= formatDateTime(u.created_at) %></div>
+              <div class="sr-update-text">
+                <% var tagClass = String(u.stage || '').toLowerCase().indexOf('invoice') >= 0 ? 'tag-invoice' : 'tag-booked'; %>
+                <span class="sr-update-tag <%= tagClass %>"><%= u.stage %></span>
+                <% if (u.note) { %><%= u.note %><% } %>
+              </div>
+            </div>
+            <% }); %>
+          </div>
+          <% } else { %>
+          <p class="portal-panel-muted" style="margin:0;">No updates yet.</p>
+          <% } %>
+        </div>
+      </div>
+
+      <div class="sr-card">
+        <div class="sr-card-header sr-card-header--split">
+          <h2 class="sr-card-title">Documents</h2>
+          <a href="/documents" class="sr-btn-upload">Upload</a>
+        </div>
+        <div class="sr-card-body sr-card-body--flush">
+          <% if (!docs || !docs.length) { %>
+          <div class="sr-doc-empty">
+            <svg width="36" height="36" viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M21 4H9a2 2 0 0 0-2 2v24a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V13L21 4z"/><path d="M21 4v9h9"/></svg>
+            <p>No documents attached yet.</p>
+          </div>
+          <% } else { %>
+          <ul class="sr-doc-list">
+            <% docs.forEach(function (d) { %>
+            <li><a href="/documents/download/<%= d.id %>" class="portal-inline-link"><%= d.original_name %></a> · <%= formatDateTime(d.created_at) %></li>
+            <% }); %>
+          </ul>
+          <% } %>
+        </div>
+      </div>
+
+      <div class="sr-card">
+        <div class="sr-card-header">
+          <h2 class="sr-card-title">Messages</h2>
+        </div>
+        <div class="sr-card-body">
+          <% msgs.forEach(function (msg) { %>
+          <div class="sr-msg-bubble">
+            <small class="sr-msg-meta"><%= msg.sender_type %> · <%= formatDateTime(msg.created_at) %></small>
+            <p class="sr-msg-body"><%= msg.body %></p>
+          </div>
           <% }); %>
-        </ul>
-      <% } %>
-      <% if (['unpaid','sent','overdue'].includes(invoice.status)) { %>
-        <p class="page-lead" style="margin-bottom:12px;">Pay online from <a href="/billing" class="section-link">Billing</a>, or use the bank details below and upload proof from Billing.</p>
-        <button type="button" class="btn btn-primary pay-now-sr" data-invoice="<%= invoice.id %>">Pay now</button>
-      <% } %>
-      <% if (invoice.status === 'awaiting_confirmation') { %>
-        <p class="page-lead" style="margin:0;"><em>Payment proof received — awaiting confirmation.</em></p>
-      <% } %>
+          <form method="post" action="/services/<%= sr.id %>/message" class="sr-message-form">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <label class="sr-form-label" for="sr-msg-body">Message EmergeHub</label>
+            <textarea id="sr-msg-body" name="body" class="sr-form-textarea" required placeholder="Type a message about this booking…"></textarea>
+            <button type="submit" class="sr-btn-send">Send message
+              <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M13 1L6 8M13 1L9 13l-3-5-5-3 12-4z"/></svg>
+            </button>
+          </form>
+        </div>
+      </div>
+
     </div>
-  <% }); %>
-  <div class="card anim anim-2" style="margin-bottom:20px;">
-    <div class="section-header" style="margin-top:0;">
-      <span class="section-title">Bank transfer</span>
-    </div>
-    <p><strong><%= bankName || '—' %></strong></p>
-    <p>Account name: <%= accountName || '—' %></p>
-    <p>Account number: <%= accountNumber || '—' %></p>
-    <p class="page-lead" style="margin-top:12px;margin-bottom:0;">Use your invoice number as the payment reference where possible.</p>
-  </div>
-  <script>
-  (function () {
-    document.querySelectorAll('.pay-now-sr').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var invoiceId = btn.getAttribute('data-invoice');
-        fetch('/billing/pay/init', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: '_csrf=' + encodeURIComponent(<%- JSON.stringify(csrfToken) %>) + '&invoice_id=' + encodeURIComponent(invoiceId),
-          credentials: 'same-origin'
-        }).then(function (r) { return r.json(); }).then(function (data) {
-          if (data.error) { alert(data.error); return; }
-          if (data.authorization_url) {
-            window.location.href = data.authorization_url;
-          } else {
-            alert('Paystack did not return a checkout URL.');
-          }
-        }).catch(function () { alert('Could not start payment.'); });
-      });
-    });
-  })();
-  </script>
+
+    <div class="sr-right-col">
+<% if (primaryInv) { %>
+      <div class="sr-invoice-card">
+        <div class="sr-invoice-header">
+          <div>
+            <div class="sr-invoice-number"><%= primaryInv.invoice_number %></div>
+            <div class="sr-invoice-amount"><%= formatNgn(primaryInv.total_cents) %></div>
+          </div>
+          <span class="sr-invoice-badge"><%= primaryInv.status %></span>
+        </div>
+        <div class="sr-invoice-body">
+          <% primaryItems.forEach(function (it) { %>
+          <div class="sr-invoice-line">
+            <span class="sr-invoice-line-label"><%= it.description %></span>
+            <span class="sr-invoice-line-value"><%= formatNgn(it.amount_cents) %></span>
+          </div>
+          <% }); %>
+          <% if (!primaryItems.length) { %>
+          <div class="sr-invoice-line">
+            <span class="sr-invoice-line-label"><%= sr.title || sr.service_name %></span>
+            <span class="sr-invoice-line-value"><%= formatNgn(primaryInv.total_cents) %></span>
+          </div>
+          <% } %>
+          <div class="sr-invoice-divider"></div>
+          <div class="sr-invoice-total">
+            <span class="sr-total-label">Total due</span>
+            <span class="sr-total-amount"><%= formatNgn(primaryInv.total_cents) %></span>
+          </div>
+          <% if (primaryInv.due_date) { %>
+          <div class="sr-invoice-due <%= dueSoon ? 'is-soon' : '' %>">
+            Due <%= formatDate(primaryInv.due_date) %>
+            <% if (dueDaysLeft !== null && invUnpaid && dueDaysLeft >= 0) { %> · <%= dueDaysLeft %> day<%= dueDaysLeft === 1 ? '' : 's' %> remaining<% } %>
+          </div>
+          <% } %>
+          <% if (['unpaid','sent','overdue'].includes(primaryInv.status)) { %>
+          <button type="button" class="sr-btn-pay pay-now-sr" data-invoice="<%= primaryInv.id %>">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="2" y="4" width="12" height="9" rx="1.5"/><path d="M2 7h12M5 10.5h2M9 10.5h2"/></svg>
+            Pay now
+          </button>
+          <p class="sr-pay-note">Or pay by <a href="#sr-bank-panel">bank transfer</a> below and upload proof via <a href="/billing">Billing</a>.</p>
+          <% } %>
+          <% if (primaryInv.status === 'awaiting_confirmation') { %>
+          <p class="portal-panel-muted" style="margin:0;text-align:center;">Payment proof received — awaiting confirmation.</p>
+          <% } %>
+        </div>
+      </div>
+      <% if (typeof invoicesWithItems !== 'undefined' && invoicesWithItems && invoicesWithItems.length > 1) { %>
+      <p class="sr-multi-inv-note">This request has multiple invoices — see <a href="/billing" class="portal-inline-link">Payments</a> for all.</p>
+      <% } %>
+<% } else { %>
+      <div class="sr-card">
+        <div class="sr-card-body">
+          <p class="portal-panel-muted" style="margin:0;">No invoice linked yet. If you expected one, check back shortly or contact EmergeHub.</p>
+        </div>
+      </div>
 <% } %>
-<p style="margin:0 0 8px;"><span class="badge"><%= sr.status %></span> · <%= sr.category_name %></p>
-<p class="page-lead" style="margin-bottom:20px;">Requested <%= formatDateTime(sr.created_at) %> · Updated <%= formatDateTime(sr.updated_at) %></p>
 
-<div class="card">
-  <h3>Timeline</h3>
-  <div class="stepper">
-    <% updates.forEach(function (u) { %>
-      <span><%= u.stage %> · <%= formatDateTime(u.created_at) %></span>
-    <% }); %>
+      <div class="sr-card" id="sr-bank-panel">
+        <div class="sr-card-header sr-card-header--split">
+          <h2 class="sr-card-title">Bank transfer</h2>
+          <% if (primaryInv) { %>
+          <a href="/billing/invoices/<%= primaryInv.id %>/print" target="_blank" rel="noopener" class="sr-print-link">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 8H2a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V9a1 1 0 0 0-1-1H9"/><rect x="3" y="1" width="6" height="7" rx="1"/><path d="M9 6H3"/></svg>
+            Print invoice
+          </a>
+          <% } %>
+        </div>
+        <div class="sr-card-body">
+          <div class="sr-bank-section">
+            <div class="sr-bank-title">Account details</div>
+            <div class="sr-bank-row">
+              <div class="sr-bank-field"><span class="sr-bank-key">Bank</span><span class="sr-bank-val"><%= bankName || '—' %></span></div>
+              <div class="sr-bank-field"><span class="sr-bank-key">Account name</span><span class="sr-bank-val"><%= accountName || '—' %></span></div>
+              <div class="sr-bank-field"><span class="sr-bank-key">Account number</span><span class="sr-bank-val"><%= accountNumber || '—' %></span></div>
+            </div>
+            <% if (primaryInv) { %>
+            <div class="sr-bank-ref">
+              Use <span class="sr-ref-highlight"><%= primaryInv.invoice_number %></span> as your payment reference. Once transferred, upload your proof of payment via <a href="/billing" class="portal-inline-link">Billing</a>.
+            </div>
+            <% } else { %>
+            <div class="sr-bank-ref">Use your invoice number as the payment reference where possible.</div>
+            <% } %>
+          </div>
+        </div>
+      </div>
+
+    </div>
   </div>
 </div>
 
-<div class="card">
-  <h3>Updates</h3>
-  <ul class="plain-list">
-    <% updates.forEach(function (u) { %>
-      <li><%= formatDateTime(u.created_at) %> — <strong><%= u.stage %></strong><% if (u.note) { %>: <%= u.note %><% } %></li>
-    <% }); %>
-  </ul>
-</div>
-
-<div class="card">
-  <h3>Documents</h3>
-  <% if (!docs.length) { %><p class="page-lead" style="margin:0;">None attached.</p><% } %>
-  <ul class="plain-list">
-    <% docs.forEach(function (d) { %>
-      <li><a href="/documents/download/<%= d.id %>"><%= d.original_name %></a> · <%= formatDateTime(d.created_at) %></li>
-    <% }); %>
-  </ul>
-</div>
-
-<div class="card">
-  <h3>Messages</h3>
-  <% msgs.forEach(function (msg) { %>
-    <div class="card" style="background:var(--surface-2);margin-bottom:12px;">
-      <small style="color:var(--text-secondary);"><%= msg.sender_type %> · <%= formatDateTime(msg.created_at) %></small>
-      <p style="margin-top:8px;"><%= msg.body %></p>
-    </div>
-  <% }); %>
-  <form method="post" action="/services/<%= sr.id %>/message" style="margin-top:16px;">
-    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-    <div class="form-row"><label>Message EmergeHub</label><textarea name="body" required placeholder="Message EmergeHub"></textarea></div>
-    <button type="submit" class="btn btn-primary">Send message</button>
-  </form>
-</div>
+<script>
+(function () {
+  document.querySelectorAll('.pay-now-sr').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var invoiceId = btn.getAttribute('data-invoice');
+      fetch('/billing/pay/init', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: '_csrf=' + encodeURIComponent(<%- JSON.stringify(typeof csrfToken !== 'undefined' ? csrfToken : '') %>) + '&invoice_id=' + encodeURIComponent(invoiceId),
+        credentials: 'same-origin'
+      }).then(function (r) { return r.json(); }).then(function (data) {
+        if (data.error) { alert(data.error); return; }
+        if (data.authorization_url) {
+          window.location.href = data.authorization_url;
+        } else {
+          alert('Paystack did not return a checkout URL.');
+        }
+      }).catch(function () { alert('Could not start payment.'); });
+    });
+  });
+})();
+</script>

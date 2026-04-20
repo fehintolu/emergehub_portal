@@ -729,10 +729,18 @@ router.get('/services/:id', async (req, res) => {
   } catch {
     /* ignore */
   }
+  const bcLabel =
+    sr.service_name && sr.service_name.length > 48 ? sr.service_name.slice(0, 45) + '…' : sr.service_name || 'Service';
   res.render('member/service-detail', {
     layout: 'layouts/member',
     title: sr.service_name,
     pageSub: sr.category_name,
+    headerVariant: 'service-detail',
+    breadcrumbBack: '/services?tab=mine',
+    breadcrumbItems: [
+      { label: 'Services', href: '/services?tab=mine' },
+      { label: bcLabel },
+    ],
     sr,
     bookingPlan,
     meetingCredits,
