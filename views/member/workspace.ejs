@@ -1,101 +1,205 @@
+<% var chkSvg = '<svg viewBox="0 0 8 8" fill="none" aria-hidden="true"><path d="M1.5 4l2 2 3-3" stroke="#1a7a4a" stroke-width="1.5" stroke-linecap="round"/></svg>'; %>
+<% function wsFeatureParts(text) {
+  if (!text || typeof text !== 'string') return [];
+  return text.split(/;/g).map(function (s) { return s.trim(); }).filter(Boolean);
+} %>
+<% function wsCreditLine(p) {
+  var mcMin = Number(p.monthly_meeting_credit_minutes) || 0;
+  if (mcMin <= 0) return null;
+  var hrsMo = mcMin / 60;
+  var dv = Number(p.duration_value);
+  var du = String(p.duration_unit || '');
+  if (du === 'month' && dv === 12 && String(p.plan_kind || '') === 'virtual') {
+    var ann = Math.round(hrsMo * 12);
+    var hm = hrsMo % 1 === 0 ? String(hrsMo) : hrsMo.toFixed(1);
+    return ann + ' hrs meeting room credits / year (' + hm + ' hrs/month)';
+  }
+  if (mcMin >= 60) {
+    var h = mcMin / 60;
+    var hl = h === 3 ? '3 hrs' : (Number.isInteger(h) ? h + ' hrs' : h.toFixed(1) + ' hrs');
+    return hl + ' meeting room credit / month';
+  }
+  return mcMin + ' min meeting room credit / month';
+} %>
+<% function wsPeriodLabel(dv, du, planKind) {
+  var _dv = Number(dv);
+  var _du = String(du || '').toLowerCase();
+  if (!(_dv > 0) || !['hour','day','month'].includes(_du)) return '';
+  if (_du === 'hour') return 'per hour';
+  if (_du === 'day') return _dv === 1 ? 'per day' : 'per ' + _dv + ' days';
+  if (_du === 'month') {
+    if (_dv === 12 && planKind === 'virtual') return 'per year';
+    return _dv === 1 ? 'per month' : 'per ' + _dv + ' months';
+  }
+  return '';
+} %>
+
+<div class="workspace-page">
+<% if ((query && (query.msg || query.err)) || (typeof waitlistClaimBanner !== 'undefined' && waitlistClaimBanner)) { %>
+  <div class="ws-flash-stack">
 <% if (query && query.msg === 'plan') { %>
-  <div class="alert alert-success">Plan request submitted. Our team will contact you.</div>
+  <div class="alert alert-success ws-flash">Plan request submitted. Our team will contact you.</div>
 <% } %>
 <% if (query && query.msg === 'booked') { %>
-  <div class="alert alert-success">Room booking submitted for approval.</div>
+  <div class="alert alert-success ws-flash">Room booking submitted for approval.</div>
 <% } %>
 <% if (query && query.err === 'business') { %>
-  <div class="alert alert-error">Add your business name under <a href="/settings/business" class="section-link">Settings → Business</a> before booking workspace access.</div>
+  <div class="alert alert-error ws-flash">Add your business name under <a href="/settings/business" class="section-link">Settings → Business</a> before booking workspace access.</div>
 <% } %>
 <% if (query && query.err === 'book') { %>
-  <div class="alert alert-error">That booking could not be completed. Please try again or pick another plan.</div>
+  <div class="alert alert-error ws-flash">That booking could not be completed. Please try again or pick another plan.</div>
 <% } %>
 <% if (query && query.err === 'price') { %>
-  <div class="alert alert-error">This plan has no price yet — please contact EmergeHub or choose another option.</div>
+  <div class="alert alert-error ws-flash">This plan has no price yet — please contact EmergeHub or choose another option.</div>
 <% } %>
 <% if (query && query.err === 'full') { %>
-  <div class="alert alert-error">That workspace plan is currently at capacity. Join the waitlist below when shown, or pick another plan.</div>
+  <div class="alert alert-error ws-flash">That workspace plan is currently at capacity. Join the waitlist below when shown, or pick another plan.</div>
 <% } %>
 <% if (query && query.err === 'waitlist') { %>
-  <div class="alert alert-error">The waitlist is not available for that selection.</div>
+  <div class="alert alert-error ws-flash">The waitlist is not available for that selection.</div>
 <% } %>
 <% if (query && query.msg === 'wl_joined') { %>
-  <div class="alert alert-success">You are on the waitlist. We will notify you in the portal when a spot opens (48 hours to claim).</div>
+  <div class="alert alert-success ws-flash">You are on the waitlist. We will notify you in the portal when a spot opens (48 hours to claim).</div>
 <% } %>
 <% if (query && query.msg === 'wl_exists') { %>
-  <div class="alert alert-success">You are already queued or have an active offer for this plan.</div>
+  <div class="alert alert-success ws-flash">You are already queued or have an active offer for this plan.</div>
 <% } %>
 <% if (query && query.msg === 'not_full') { %>
-  <div class="alert alert-success">That plan still has capacity — use Book &amp; invoice when you are ready.</div>
+  <div class="alert alert-success ws-flash">That plan still has capacity — use Book &amp; invoice when you are ready.</div>
 <% } %>
 <% if (typeof waitlistClaimBanner !== 'undefined' && waitlistClaimBanner) { %>
-  <div class="alert alert-success">Your waitlist spot is ready for <strong><%= waitlistClaimBanner.planTitle %></strong>. Scroll to <strong>Core workspace access</strong> and use <em>Book &amp; invoice</em> for that plan, then pay within 48 hours if an invoice is created.</div>
+  <div class="alert alert-success ws-flash">Your waitlist spot is ready for <strong><%= waitlistClaimBanner.planTitle %></strong>. Scroll to <strong>Core workspace access</strong> and use <em>Book &amp; invoice</em> for that plan, then pay within 48 hours if an invoice is created.</div>
+<% } %>
+  </div>
 <% } %>
 
 <% if (typeof meetingCredits !== 'undefined' && meetingCredits && (meetingCredits.granted > 0 || meetingCredits.available > 0)) { %>
-  <div class="card" style="margin-bottom:20px;border-left:4px solid var(--green);">
-    <p style="margin:0;font-size:14px;line-height:1.55;"><strong>Meeting room credits</strong> — this month you have <strong><%= meetingCredits.available %></strong> of <strong><%= meetingCredits.granted %></strong> plan minutes remaining (<%= meetingCredits.used %> used). Credits apply automatically when you book eligible hub rooms.</p>
-    <p class="page-lead" style="margin:8px 0 0;font-size:13px;"><a href="/meeting-rooms" class="section-link">Book a meeting room</a></p>
+  <div class="ws-strip ws-strip--credits">
+    <p><strong>Meeting room credits</strong> — this month you have <strong><%= meetingCredits.available %></strong> of <strong><%= meetingCredits.granted %></strong> plan minutes remaining (<%= meetingCredits.used %> used). Credits apply automatically when you book eligible hub rooms.</p>
+    <a href="/meeting-rooms" class="ws-strip-link">Book a meeting room →</a>
   </div>
 <% } %>
 
-<div class="card" style="margin-bottom:20px;border-left:4px solid var(--brand);">
-  <p style="margin:0;font-size:14px;line-height:1.5;"><strong>Paid meeting rooms</strong> — browse hub spaces, see discounts, and pay online to confirm your slot. <a href="/meeting-rooms" class="section-link">Book a meeting room</a> · <a href="/meeting-rooms/my-bookings" class="section-link">My room bookings</a></p>
-  <p class="page-lead" style="margin:8px 0 0;font-size:13px;">The simple room form below is the legacy request list (admin approval). Prefer the new flow when possible.</p>
-</div>
+  <!-- Promo banner -->
+  <div class="ws-banner-promo">
+    <div class="ws-banner-icon" aria-hidden="true">
+      <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="#FFF605" stroke-width="1.8">
+        <rect x="3" y="4" width="14" height="13" rx="2"/>
+        <path d="M7 2v4M13 2v4M3 9h14"/>
+        <path d="M7 13h2l1 2 2-4"/>
+      </svg>
+    </div>
+    <div class="ws-banner-content">
+      <div class="ws-banner-title">New booking experience available</div>
+      <div class="ws-banner-text">Pick meeting rooms, see live discounts, and pay online to confirm your slot instantly.</div>
+      <div class="ws-banner-links">
+        <a href="/meeting-rooms" class="ws-banner-link">Book a meeting room
+          <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 6h8M7 3l3 3-3 3"/></svg>
+        </a>
+        <a href="/meeting-rooms/my-bookings" class="ws-banner-link">My room bookings
+          <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 6h8M7 3l3 3-3 3"/></svg>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="ws-section-heading">
+    <div class="ws-section-title">Core workspace access</div>
+    <div class="ws-section-sub">Select a plan — we create your request and invoice immediately</div>
+  </div>
+
+  <!-- Hot Desking (static — plans coming soon) -->
+  <div class="ws-category-block">
+    <div class="ws-category-header">
+      <div class="ws-category-name">Hot Desking</div>
+      <span class="ws-category-tag">Core Workspace</span>
+    </div>
+    <div class="ws-category-desc">Flexible open floor access for freelancers, remote workers, and individuals. Use a desk whenever you need it without a long-term commitment.</div>
+    <p class="ws-coming-soon-note">Plans coming soon — check back shortly.</p>
+  </div>
+
+  <div class="ws-divider"></div>
 
 <% if (bookableServices && bookableServices.length) { %>
-  <div class="section-header" style="margin-top:0;">
-    <span class="section-title">Core workspace access</span>
-  </div>
-  <p class="page-lead" style="margin-top:-6px;margin-bottom:16px;">Pick a service and plan — we create your request and invoice immediately. No long request form.</p>
   <% bookableServices.forEach(function (svc) { %>
     <% var plans = (plansByService && plansByService[svc.id]) ? plansByService[svc.id] : []; %>
-    <div class="card" style="margin-bottom:20px;">
-      <strong style="font-size:1.05rem;"><%= svc.name %></strong>
-      <span class="badge" style="margin-left:8px;"><%= svc.category_name %></span>
-      <p class="page-lead" style="margin:10px 0 14px;"><%= svc.description %></p>
+    <div class="ws-category-block">
+      <div class="ws-category-header">
+        <div class="ws-category-name"><%= svc.name %></div>
+        <span class="ws-category-tag"><%= svc.category_name %></span>
+      </div>
+      <div class="ws-category-desc"><%= svc.description %></div>
       <% if (!plans.length) { %>
-        <p class="page-lead" style="margin:0;color:var(--text-secondary);">Plans coming soon — check back shortly.</p>
+        <p class="ws-coming-soon-note">Plans coming soon — check back shortly.</p>
       <% } else { %>
-        <div style="display:grid;gap:12px;">
+        <div class="ws-plan-grid">
           <% plans.forEach(function (p) { %>
             <% var _dv = Number(p.duration_value); var _du = String(p.duration_unit || '').toLowerCase(); %>
             <% var _durOk = _dv > 0 && ['hour','day','month'].includes(_du); %>
             <% var _unitLbl = !_durOk ? '' : (_du === 'month' ? (_dv === 1 ? 'month' : 'months') : _du === 'day' ? (_dv === 1 ? 'day' : 'days') : (_dv === 1 ? 'hour' : 'hours')); %>
-            <div class="card" style="background:var(--surface-2);margin-bottom:0;">
-              <div style="display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px;">
-                <div>
-                  <strong><%= p.title %></strong>
-                  <% if (_durOk) { %>
-                    <span class="badge" style="margin-left:6px;"><%= _dv %> <%= _unitLbl %> access</span>
-                  <% } %>
-                  <p class="page-lead" style="margin:6px 0 0;font-size:14px;"><%= p.description %></p>
-                  <% if (_durOk) { %>
-                    <p class="page-lead" style="margin:8px 0 0;font-size:13px;color:var(--text-secondary);">Access period starts after your invoice is paid (unless EmergeHub schedules a different start).</p>
+            <% var slug = String(p.plan_slug || ''); %>
+            <% var isFeatured = slug === 'hot-desk-month' || slug === 'virtual-enterprise-year'; %>
+            <% var feats = wsFeatureParts(p.description); %>
+            <% var cap = (typeof capacityByPlanId !== 'undefined' && capacityByPlanId) ? capacityByPlanId[p.id] : null; %>
+            <% var wlRow = cap && typeof waitlistByProfileId !== 'undefined' && waitlistByProfileId ? waitlistByProfileId[cap.profile_id] : null; %>
+            <% var creditLine = wsCreditLine(p); %>
+            <% var periodLbl = wsPeriodLabel(p.duration_value, p.duration_unit, p.plan_kind); %>
+            <div class="ws-plan-card<%= isFeatured ? ' featured' : '' %>">
+              <div class="ws-plan-top">
+                <div class="ws-plan-name"><%= p.title %></div>
+                <% if (_durOk) { %>
+                  <span class="ws-plan-badge"><span class="ws-badge-dot"></span><%= _dv %> <%= _unitLbl %> access</span>
+                <% } else if (String(p.plan_kind || '') === 'room_rate') { %>
+                  <span class="ws-plan-badge"><span class="ws-badge-dot"></span>Bookable</span>
+                <% } %>
+              </div>
+              <% if (feats.length > 1) { %>
+                <div class="ws-plan-features">
+                  <% feats.forEach(function (line) { %>
+                    <div class="ws-feature-item">
+                      <div class="ws-feature-check"><%- chkSvg %></div>
+                      <%= line %>
+                    </div>
+                  <% }); %>
+                </div>
+              <% } else { %>
+                <div class="ws-plan-desc"><%= p.description %></div>
+              <% } %>
+              <% if (creditLine) { %>
+                <div class="ws-credit-pill">
+                  <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="1" y="2" width="10" height="8" rx="1.5"/><path d="M4 2V1M8 2V1M1 5h10"/></svg>
+                  <%= creditLine %>
+                </div>
+              <% } %>
+              <div class="ws-plan-footer">
+                <div class="ws-plan-price">
+                  <div class="ws-price-amount"><%= formatNgn(p.price_cents) %></div>
+                  <% if (periodLbl) { %><div class="ws-price-period"><%= periodLbl %></div><% } %>
+                  <% if (_durOk && _du !== 'hour' && String(p.plan_kind || '') !== 'room_rate') { %>
+                    <div class="ws-plan-note">Access period starts after invoice is paid</div>
                   <% } %>
                 </div>
-                <div style="text-align:right;">
-                  <p style="font-weight:700;margin:0 0 8px;"><%= formatNgn(p.price_cents) %></p>
-                  <% var cap = (typeof capacityByPlanId !== 'undefined' && capacityByPlanId) ? capacityByPlanId[p.id] : null; %>
-                  <% var wlRow = cap && typeof waitlistByProfileId !== 'undefined' && waitlistByProfileId ? waitlistByProfileId[cap.profile_id] : null; %>
+                <div class="ws-plan-actions">
                   <% if (cap && cap.full) { %>
-                    <span class="badge" style="margin-bottom:8px;display:inline-block;">At capacity</span>
                     <% if (cap.waitlist_enabled && !wlRow) { %>
-                      <form method="post" action="/workspace/waitlist" style="display:inline;">
+                      <form method="post" action="/workspace/waitlist" class="ws-plan-form">
                         <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                         <input type="hidden" name="service_plan_id" value="<%= p.id %>" />
-                        <button type="submit" class="btn btn-secondary">Join waitlist</button>
+                        <button type="submit" class="ws-btn-book secondary">Join waitlist</button>
                       </form>
                     <% } else if (wlRow) { %>
-                      <p class="page-lead" style="margin:0;font-size:12px;">Waitlist: <strong><%= wlRow.status %></strong><% if (wlRow.status === 'offered' && wlRow.offer_expires_at) { %> · offer expires <%= formatDateTime(wlRow.offer_expires_at) %><% } %></p>
+                      <p class="ws-waitlist-status">Waitlist: <strong><%= wlRow.status %></strong><% if (wlRow.status === 'offered' && wlRow.offer_expires_at) { %> · offer expires <%= formatDateTime(wlRow.offer_expires_at) %><% } %></p>
+                    <% } else { %>
+                      <p class="ws-waitlist-status">At capacity</p>
                     <% } %>
                   <% } else { %>
-                    <form method="post" action="/workspace/book-service" style="display:inline;">
+                    <form method="post" action="/workspace/book-service" class="ws-plan-form">
                       <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                       <input type="hidden" name="service_id" value="<%= svc.id %>" />
                       <input type="hidden" name="plan_id" value="<%= p.id %>" />
-                      <button type="submit" class="btn btn-primary">Book &amp; invoice</button>
+                      <button type="submit" class="ws-btn-book">Book &amp; Invoice
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 6h8M7 3l3 3-3 3"/></svg>
+                      </button>
                     </form>
                   <% } %>
                 </div>
@@ -105,39 +209,41 @@
         </div>
       <% } %>
     </div>
+    <div class="ws-divider"></div>
   <% }); %>
 <% } %>
 
 <% if (plan) { %>
-  <div class="card">
-    <h3>Current plan</h3>
-    <p><strong><%= plan.name %></strong> <span class="badge"><%= plan.status %></span></p>
-    <p class="page-lead" style="margin-bottom:0;"><%= plan.description %></p>
-    <p><strong>Price:</strong> <%= plan.price_display %> · <%= plan.hours %></p>
-    <p><strong>Started:</strong> <%= formatDate(plan.started_at) %> · <strong>Renewal:</strong> <%= plan.renewal_at ? formatDate(plan.renewal_at) : '—' %></p>
-    <% if (plan.desk_or_office) { %><p><strong>Assignment:</strong> <%= plan.desk_or_office %></p><% } %>
+  <div class="ws-panel">
+    <h3 class="ws-panel-title">Current plan</h3>
+    <p class="ws-panel-line"><strong><%= plan.name %></strong> <span class="ws-inline-badge"><%= plan.status %></span></p>
+    <p class="ws-panel-desc"><%= plan.description %></p>
+    <p class="ws-panel-line"><strong>Price:</strong> <%= plan.price_display %> · <%= plan.hours %></p>
+    <p class="ws-panel-line"><strong>Started:</strong> <%= formatDate(plan.started_at) %> · <strong>Renewal:</strong> <%= plan.renewal_at ? formatDate(plan.renewal_at) : '—' %></p>
+    <% if (plan.desk_or_office) { %><p class="ws-panel-line"><strong>Assignment:</strong> <%= plan.desk_or_office %></p><% } %>
   </div>
 
-  <div class="member-two-col" style="margin-bottom: 0;">
-    <div class="card" style="margin-bottom: 0;">
-      <h3>Upcoming room bookings</h3>
-      <% if (!bookingsUp.length) { %><p class="page-lead" style="margin:0;">None scheduled.</p><% } %>
-      <ul class="plain-list">
+  <div class="ws-two-col">
+    <div class="ws-panel">
+      <h3 class="ws-panel-title">Upcoming room bookings</h3>
+      <% if (!bookingsUp.length) { %><p class="ws-panel-muted">None scheduled.</p><% } %>
+      <ul class="ws-plain-list">
         <% bookingsUp.forEach(function (b) { %>
-          <li><%= formatDateTime(b.starts_at) %> — <strong><%= b.room_name %></strong> <span class="badge"><%= b.status %></span></li>
+          <li><%= formatDateTime(b.starts_at) %> — <strong><%= b.room_name %></strong> <span class="ws-inline-badge"><%= b.status %></span></li>
         <% }); %>
       </ul>
-      <h3 style="margin-top:1.25rem;">Past bookings</h3>
-      <% if (!bookingsPast.length) { %><p class="page-lead" style="margin:0;">None yet.</p><% } %>
-      <ul class="plain-list">
+      <h3 class="ws-panel-title ws-panel-title--spaced">Past bookings</h3>
+      <% if (!bookingsPast.length) { %><p class="ws-panel-muted">None yet.</p><% } %>
+      <ul class="ws-plain-list">
         <% bookingsPast.forEach(function (b) { %>
           <li><%= formatDateTime(b.starts_at) %> — <%= b.room_name %></li>
         <% }); %>
       </ul>
     </div>
-    <div class="card" style="margin-bottom: 0;">
-      <h3>Book a room</h3>
-      <form method="post" action="/workspace/book-room">
+    <div class="ws-panel">
+      <h3 class="ws-panel-title">Book a room</h3>
+      <p class="ws-legacy-note">Legacy request form (admin approval). Prefer <a href="/meeting-rooms">paid meeting rooms</a> when possible.</p>
+      <form method="post" action="/workspace/book-room" class="ws-legacy-form">
         <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
         <div class="form-row">
           <label>Room</label>
@@ -157,26 +263,26 @@
           <label>Purpose</label>
           <input type="text" name="purpose" />
         </div>
-        <button type="submit" class="btn btn-primary">Submit booking</button>
+        <button type="submit" class="ws-btn-book">Submit booking</button>
       </form>
     </div>
   </div>
+
+  <div class="ws-panel">
+    <h3 class="ws-panel-title">Change plan</h3>
+    <p class="ws-panel-desc">To upgrade or change plan, pick a tier and we will contact you.</p>
+    <form method="post" action="/workspace/plan-request" class="ws-legacy-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+      <div class="form-row">
+        <label>Tier</label>
+        <select name="tier_id" required>
+          <% tiers.forEach(function (t) { %><option value="<%= t.id %>"><%= t.name %></option><% }); %>
+        </select>
+      </div>
+      <div class="form-row"><label>Message</label><input type="text" name="note" placeholder="What would you like to change?" /></div>
+      <button type="submit" class="ws-btn-book">Send request</button>
+    </form>
+  </div>
 <% } %>
 
-<% if (plan) { %>
-<div class="card">
-  <h3>Change plan</h3>
-  <p class="page-lead">To upgrade or change plan, pick a tier and we will contact you.</p>
-  <form method="post" action="/workspace/plan-request">
-    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-    <div class="form-row">
-      <label>Tier</label>
-      <select name="tier_id" required>
-        <% tiers.forEach(function (t) { %><option value="<%= t.id %>"><%= t.name %></option><% }); %>
-      </select>
-    </div>
-    <div class="form-row"><label>Message</label><input type="text" name="note" placeholder="What would you like to change?" /></div>
-    <button type="submit" class="btn btn-primary">Send request</button>
-  </form>
 </div>
-<% } %>

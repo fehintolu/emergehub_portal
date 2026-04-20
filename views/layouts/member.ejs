@@ -9,18 +9,25 @@
 <body>
   <%- include('../partials/member-sidebar') %>
 
-  <div class="main">
-    <header class="page-header anim anim-1">
-      <div>
-        <div class="page-title"><%= title %></div>
+  <% var _ws = typeof memberPath !== 'undefined' && memberPath === '/workspace'; %>
+  <div class="main<%= _ws ? ' main--workspace' : '' %>">
+    <header class="page-header anim anim-1<%= _ws ? ' workspace-topbar' : '' %>">
+      <div class="page-header-mini">
+        <div class="page-title<%= _ws ? ' workspace-page-title' : '' %>"><%= title %></div>
         <div class="page-sub"><%= typeof pageSub === 'string' && pageSub ? pageSub : (typeof todaySubtitle !== 'undefined' ? todaySubtitle : '') %></div>
       </div>
-      <div class="header-toolbar">
+      <div class="header-toolbar topbar-actions">
+        <% if (_ws) { %>
+        <a class="icon-btn" href="/meeting-rooms" title="Search" aria-label="Book a meeting room">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M11 11l2.5 2.5"/></svg>
+        </a>
+        <% } else { %>
         <a class="icon-btn" href="/services?tab=request" title="Browse services" aria-label="Browse services">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </a>
+        <% } %>
         <a class="icon-btn" href="/notifications" title="Notifications" aria-label="Notifications">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 2a4 4 0 0 1 4 4v2l1 2H3l1-2V6a4 4 0 0 1 4-4zM6.5 12a1.5 1.5 0 0 0 3 0"/></svg>
           <% if (typeof notifCount === 'number' && notifCount > 0) { %>
             <span class="notif-dot" aria-hidden="true"></span>
           <% } %>
@@ -28,7 +35,7 @@
       </div>
     </header>
 
-    <div class="member-body">
+    <div class="member-body<%= _ws ? ' member-body--workspace' : '' %>">
       <%- body %>
     </div>
   </div>
