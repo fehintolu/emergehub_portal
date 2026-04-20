@@ -2429,6 +2429,10 @@ body.admin-auth-page {
   gap: 18px;
 }
 
+.mr-rooms-grid > * {
+  min-width: 0;
+}
+
 .mr-room-card {
   background: #fff;
   border: 1px solid #e0d8d0;
@@ -2547,18 +2551,26 @@ body.admin-auth-page {
 }
 
 .mr-amenity {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   font-size: 11px;
+  line-height: 1.25;
   color: #5c4455;
   background: #f5f3f0;
   border-radius: 6px;
   padding: 4px 8px;
+  max-width: 100%;
 }
 
-.mr-amenity svg {
+/* Inline check SVG must stay small or it grows like a block and crowds/clips labels */
+.portal-page--rooms .mr-amenity svg {
+  width: 10px;
+  height: 10px;
+  min-width: 10px;
+  min-height: 10px;
   flex-shrink: 0;
+  display: block;
 }
 
 .mr-pricing-row {
