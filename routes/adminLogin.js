@@ -155,7 +155,8 @@ router.post('/reset-password', forgotResetLimiter, requireValidCsrf, async (req,
   }
   const { rows } = await pool.query(
     `SELECT id FROM portal_admin_users
-     WHERE password_reset_token = $1 AND password_reset_expires > now() AND deleted_at IS NULL`,
+     WHERE password_reset_token = $1 AND password_reset_expires > now()
+       AND deleted_at IS NULL AND active = true`,
     [token]
   );
   if (!rows[0]) {
