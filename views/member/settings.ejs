@@ -1,67 +1,193 @@
-<div class="tabs">
-  <a href="/settings/profile" class="<%= tab === 'profile' ? 'is-active' : '' %>">Profile</a>
-  <a href="/settings/business" class="<%= tab === 'business' ? 'is-active' : '' %>">Business</a>
-  <a href="/settings/notifications" class="<%= tab === 'notifications' ? 'is-active' : '' %>">Notifications</a>
-  <a href="/settings/security" class="<%= tab === 'security' ? 'is-active' : '' %>">Security</a>
-</div>
+<div class="settings-page">
+  <% if (typeof query !== 'undefined' && query.msg === '1') { %>
+    <div class="alert alert-success ws-flash" style="margin-bottom:18px;">Saved.</div>
+  <% } %>
+  <% if (typeof query !== 'undefined' && query.err === 'old') { %>
+    <div class="alert alert-error ws-flash" style="margin-bottom:18px;">Current password is incorrect.</div>
+  <% } %>
+  <% if (typeof query !== 'undefined' && query.err === 'pw') { %>
+    <div class="alert alert-error ws-flash" style="margin-bottom:18px;">New passwords must match and be at least 8 characters.</div>
+  <% } %>
+  <% if (typeof query !== 'undefined' && query.err === 'self') { %>
+    <div class="alert alert-error ws-flash" style="margin-bottom:18px;">You cannot revoke the session you are using now.</div>
+  <% } %>
+  <% if (typeof query !== 'undefined' && query.msg === 'revoked') { %>
+    <div class="alert alert-success ws-flash" style="margin-bottom:18px;">Session signed out.</div>
+  <% } %>
 
-<div class="card">
+  <nav class="settings-tabs" aria-label="Settings sections">
+    <a href="/settings/profile" class="settings-tab<%= tab === 'profile' ? ' is-active' : '' %>">Profile</a>
+    <a href="/settings/business" class="settings-tab<%= tab === 'business' ? ' is-active' : '' %>">Business</a>
+    <a href="/settings/notifications" class="settings-tab<%= tab === 'notifications' ? ' is-active' : '' %>">Notifications</a>
+    <a href="/settings/security" class="settings-tab<%= tab === 'security' ? ' is-active' : '' %>">Security</a>
+  </nav>
+
+  <div class="settings-card">
 <% if (tab === 'profile') { %>
-  <form method="post" action="/settings/profile" enctype="multipart/form-data">
-    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-    <div class="form-row"><label>Full name</label><input type="text" name="full_name" value="<%= currentMember.full_name %>" required /></div>
-    <div class="form-row"><label>Email</label><input type="email" name="email" value="<%= currentMember.email %>" required /></div>
-    <div class="form-row"><label>Phone</label><input type="tel" name="phone" value="<%= currentMember.phone %>" required /></div>
-    <div class="form-row"><label>Profile photo (JPG/PNG)</label><input type="file" name="photo" accept=".jpg,.jpeg,.png" /></div>
-    <button type="submit" class="btn btn-primary">Save</button>
-  </form>
-  <p style="margin-top:16px;"><small style="color:var(--text-secondary);">Changing email will require re-verification.</small></p>
+    <p class="settings-lead">Update how you appear in the portal. Optional fields help us with billing and support.</p>
+    <form method="post" action="/settings/profile" enctype="multipart/form-data" class="settings-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+
+      <h3 class="settings-section-title">Account</h3>
+      <div class="settings-grid settings-grid--2">
+        <div class="settings-field">
+          <label class="settings-label" for="full_name">Full name</label>
+          <input class="settings-input" id="full_name" type="text" name="full_name" value="<%= currentMember.full_name %>" required autocomplete="name" />
+        </div>
+        <div class="settings-field">
+          <label class="settings-label" for="email">Email (login)</label>
+          <input class="settings-input" id="email" type="email" name="email" value="<%= currentMember.email %>" required autocomplete="email" />
+        </div>
+        <div class="settings-field">
+          <label class="settings-label" for="phone">Primary phone</label>
+          <input class="settings-input" id="phone" type="text" name="phone" value="<%= currentMember.phone %>" required autocomplete="tel" />
+        </div>
+        <div class="settings-field">
+          <label class="settings-label" for="photo">Profile photo</label>
+          <input class="settings-input settings-input--file" id="photo" type="file" name="photo" accept=".jpg,.jpeg,.png" />
+          <span class="settings-hint">JPG or PNG</span>
+        </div>
+      </div>
+
+      <h3 class="settings-section-title">Additional details <span class="settings-optional">optional</span></h3>
+      <div class="settings-grid settings-grid--2">
+        <div class="settings-field">
+          <label class="settings-label" for="salutation">Salutation</label>
+          <input class="settings-input" id="salutation" type="text" name="salutation" value="<%= currentMember.salutation || '' %>" placeholder="Mr., Mrs., Dr.…" autocomplete="honorific-prefix" />
+        </div>
+        <div class="settings-field">
+          <label class="settings-label" for="contact_name">Contact name</label>
+          <input class="settings-input" id="contact_name" type="text" name="contact_name" value="<%= currentMember.contact_name || '' %>" />
+        </div>
+        <div class="settings-field">
+          <label class="settings-label" for="first_name">First name</label>
+          <input class="settings-input" id="first_name" type="text" name="first_name" value="<%= currentMember.first_name || '' %>" autocomplete="given-name" />
+        </div>
+        <div class="settings-field">
+          <label class="settings-label" for="last_name">Last name</label>
+          <input class="settings-input" id="last_name" type="text" name="last_name" value="<%= currentMember.last_name || '' %>" autocomplete="family-name" />
+        </div>
+        <div class="settings-field">
+          <label class="settings-label" for="contact_type">Contact type</label>
+          <input class="settings-input" id="contact_type" type="text" name="contact_type" value="<%= currentMember.contact_type || '' %>" placeholder="e.g. founder, finance" />
+        </div>
+        <div class="settings-field">
+          <label class="settings-label" for="mobile_phone">Mobile phone</label>
+          <input class="settings-input" id="mobile_phone" type="text" name="mobile_phone" value="<%= currentMember.mobile_phone || '' %>" autocomplete="tel" />
+        </div>
+        <div class="settings-field">
+          <label class="settings-label" for="billing_state">Billing state / region</label>
+          <input class="settings-input" id="billing_state" type="text" name="billing_state" value="<%= currentMember.billing_state || '' %>" />
+        </div>
+        <div class="settings-field">
+          <label class="settings-label" for="billing_country">Billing country</label>
+          <input class="settings-input" id="billing_country" type="text" name="billing_country" value="<%= currentMember.billing_country || '' %>" />
+        </div>
+        <div class="settings-field settings-field--full">
+          <label class="settings-label" for="crm_product">Product / membership notes</label>
+          <input class="settings-input" id="crm_product" type="text" name="crm_product" value="<%= currentMember.crm_product || '' %>" placeholder="e.g. hot desk, virtual office" />
+        </div>
+      </div>
+
+      <p class="settings-note">Changing your email will require verification again.</p>
+      <button type="submit" class="btn btn-primary settings-save">Save profile</button>
+    </form>
 <% } %>
 
 <% if (tab === 'business') { %>
-  <form method="post" action="/settings/business">
-    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-    <div class="form-row"><label>Business name</label><input type="text" name="business_name" value="<%= currentMember.business_name || '' %>" /></div>
-    <div class="form-row"><label>Business type</label><input type="text" name="business_type" value="<%= currentMember.business_type || '' %>" /></div>
-    <div class="form-row"><label>CAC number</label><input type="text" name="cac_number" value="<%= currentMember.cac_number || '' %>" /></div>
-    <div class="form-row"><label>Industry</label><input type="text" name="industry" value="<%= currentMember.industry || '' %>" /></div>
-    <div class="form-row"><label>Website</label><input type="url" name="website" value="<%= currentMember.website || '' %>" /></div>
-    <button type="submit" class="btn btn-primary">Save</button>
-  </form>
+    <p class="settings-lead">Business details are used for workspace booking and invoices.</p>
+    <form method="post" action="/settings/business" class="settings-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+      <div class="settings-grid settings-grid--2">
+        <div class="settings-field settings-field--full">
+          <label class="settings-label" for="business_name">Business name</label>
+          <input class="settings-input" id="business_name" type="text" name="business_name" value="<%= currentMember.business_name || '' %>" autocomplete="organization" />
+        </div>
+        <div class="settings-field">
+          <label class="settings-label" for="business_type">Business type</label>
+          <input class="settings-input" id="business_type" type="text" name="business_type" value="<%= currentMember.business_type || '' %>" />
+        </div>
+        <div class="settings-field">
+          <label class="settings-label" for="industry">Industry</label>
+          <input class="settings-input" id="industry" type="text" name="industry" value="<%= currentMember.industry || '' %>" />
+        </div>
+        <div class="settings-field">
+          <label class="settings-label" for="cac_number">CAC / registration number</label>
+          <input class="settings-input" id="cac_number" type="text" name="cac_number" value="<%= currentMember.cac_number || '' %>" />
+        </div>
+        <div class="settings-field">
+          <label class="settings-label" for="website">Website</label>
+          <input class="settings-input" id="website" type="url" name="website" value="<%= currentMember.website || '' %>" placeholder="https://…" />
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary settings-save">Save business</button>
+    </form>
 <% } %>
 
 <% if (tab === 'notifications') { %>
-  <form method="post" action="/settings/notifications">
-    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-    <div class="form-row" style="margin-bottom:12px;"><label><input type="checkbox" name="notify_email_invoice" value="1" <%= currentMember.notify_email_invoice ? 'checked' : '' %> /> Invoice emails</label></div>
-    <div class="form-row" style="margin-bottom:12px;"><label><input type="checkbox" name="notify_email_service" value="1" <%= currentMember.notify_email_service ? 'checked' : '' %> /> Service updates</label></div>
-    <div class="form-row" style="margin-bottom:12px;"><label><input type="checkbox" name="notify_email_support" value="1" <%= currentMember.notify_email_support ? 'checked' : '' %> /> Support replies</label></div>
-    <div class="form-row" style="margin-bottom:12px;"><label><input type="checkbox" name="notify_email_announcements" value="1" <%= currentMember.notify_email_announcements ? 'checked' : '' %> /> Announcements</label></div>
-    <div class="form-row" style="margin-bottom:12px;"><label><input type="checkbox" name="notify_sms" value="1" <%= currentMember.notify_sms ? 'checked' : '' %> /> SMS (if phone verified)</label></div>
-    <button type="submit" class="btn btn-primary" style="margin-top:8px;">Save</button>
-  </form>
+    <p class="settings-lead">Choose how we reach you about invoices, services, and updates.</p>
+    <form method="post" action="/settings/notifications" class="settings-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+      <ul class="settings-checklist">
+        <li class="settings-check-item">
+          <label class="settings-check-label"><input type="checkbox" name="notify_email_invoice" value="1" <%= currentMember.notify_email_invoice ? 'checked' : '' %> /> Invoice &amp; billing emails</label>
+        </li>
+        <li class="settings-check-item">
+          <label class="settings-check-label"><input type="checkbox" name="notify_email_service" value="1" <%= currentMember.notify_email_service ? 'checked' : '' %> /> Service request updates</label>
+        </li>
+        <li class="settings-check-item">
+          <label class="settings-check-label"><input type="checkbox" name="notify_email_support" value="1" <%= currentMember.notify_email_support ? 'checked' : '' %> /> Support ticket replies</label>
+        </li>
+        <li class="settings-check-item">
+          <label class="settings-check-label"><input type="checkbox" name="notify_email_announcements" value="1" <%= currentMember.notify_email_announcements ? 'checked' : '' %> /> Announcements</label>
+        </li>
+        <li class="settings-check-item">
+          <label class="settings-check-label"><input type="checkbox" name="notify_sms" value="1" <%= currentMember.notify_sms ? 'checked' : '' %> /> SMS (when phone is verified)</label>
+        </li>
+      </ul>
+      <button type="submit" class="btn btn-primary settings-save">Save preferences</button>
+    </form>
 <% } %>
 
 <% if (tab === 'security') { %>
-  <form method="post" action="/settings/password">
-    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-    <div class="form-row"><label>Current password</label><input type="password" name="current_password" required autocomplete="current-password" /></div>
-    <div class="form-row"><label>New password</label><input type="password" name="password" minlength="8" required autocomplete="new-password" /></div>
-    <div class="form-row"><label>Confirm</label><input type="password" name="password2" minlength="8" required autocomplete="new-password" /></div>
-    <button type="submit" class="btn btn-primary">Update password</button>
-  </form>
-  <h3 style="margin:28px 0 12px;">Active sessions</h3>
-  <ul class="plain-list">
-    <% sessions.forEach(function (s) { %>
-      <li>
-        <%= s.ip_address %> · <%= formatDateTime(s.last_seen_at) %>
-        <form method="post" action="/settings/session-revoke" style="display:inline;margin-left:8px;">
-          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-          <input type="hidden" name="session_sid" value="<%= s.session_sid %>" />
-          <button type="submit" class="link-btn">Log out</button>
-        </form>
-      </li>
-    <% }); %>
-  </ul>
+    <p class="settings-lead">Update your password and review devices signed in to your account.</p>
+    <form method="post" action="/settings/password" class="settings-form settings-form--security">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+      <h3 class="settings-section-title">Password</h3>
+      <div class="settings-grid settings-grid--1">
+        <div class="settings-field">
+          <label class="settings-label" for="current_password">Current password</label>
+          <input class="settings-input" id="current_password" type="password" name="current_password" required autocomplete="current-password" />
+        </div>
+        <div class="settings-field">
+          <label class="settings-label" for="password">New password</label>
+          <input class="settings-input" id="password" type="password" name="password" minlength="8" required autocomplete="new-password" />
+        </div>
+        <div class="settings-field">
+          <label class="settings-label" for="password2">Confirm new password</label>
+          <input class="settings-input" id="password2" type="password" name="password2" minlength="8" required autocomplete="new-password" />
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary settings-save">Update password</button>
+    </form>
+
+    <h3 class="settings-section-title" style="margin-top:28px;">Active sessions</h3>
+    <ul class="settings-session-list">
+      <% sessions.forEach(function (s) { %>
+        <li class="settings-session-row">
+          <div class="settings-session-meta">
+            <span class="settings-session-ip"><%= s.ip_address || '—' %></span>
+            <span class="settings-session-sep">·</span>
+            <span class="settings-session-time"><%= formatDateTime(s.last_seen_at) %></span>
+          </div>
+          <form method="post" action="/settings/session-revoke" class="settings-session-revoke">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <input type="hidden" name="session_sid" value="<%= s.session_sid %>" />
+            <button type="submit" class="settings-link-btn">Sign out device</button>
+          </form>
+        </li>
+      <% }); %>
+    </ul>
 <% } %>
+  </div>
 </div>

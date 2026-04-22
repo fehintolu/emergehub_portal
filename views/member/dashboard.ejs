@@ -14,6 +14,13 @@
   </div>
 <% } %>
 
+<div class="card anim anim-1" style="margin-bottom: 16px; padding: 14px 18px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;">
+  <div style="font-size: 14px; line-height: 1.45; color: #3d2f36; max-width: 520px;">
+    <strong style="color: #1a0a12;">Knowledge base</strong> — step-by-step help for payments, services, meeting rooms, workspace, documents, and account settings.
+  </div>
+  <a href="/help" class="btn btn-primary" style="white-space: nowrap;">Open guides</a>
+</div>
+
 <div class="filter-bar anim anim-1">
   <div class="filter-pill">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
@@ -73,7 +80,7 @@
       <div class="stat-value-row">
         <div class="stat-value" style="font-size:20px;"><%= stats.meetingCredits.available %></div>
       </div>
-      <div class="stat-trend">min left this month · <%= stats.meetingCredits.used %> used of <%= stats.meetingCredits.granted %></div>
+      <div class="stat-trend"><%= stats.meetingCredits.pool_expires_on ? ('Through ' + formatDate(stats.meetingCredits.pool_expires_on) + ' · ') : '' %><%= stats.meetingCredits.used %> used of <%= stats.meetingCredits.granted %> min</div>
     <% } else { %>
       <div class="stat-plan-name">—</div>
       <div class="stat-trend">Included minutes apply on eligible room bookings</div>

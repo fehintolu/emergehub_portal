@@ -1,0 +1,160 @@
+<% 
+  var isNew = !plan;
+  var ngn = plan ? Math.round(Number(plan.price_cents || 0) / 100) : 0;
+  var duSel = plan ? String(plan.duration_unit || '').toLowerCase() : '';
+%>
+<div class="admin-plans admin-plans--form">
+  <div class="pl-topbar">
+    <div class="pl-breadcrumb">
+      <a class="pl-back" href="/admin/catalog/<%= svc.id %>/plans" title="All plans" aria-label="Back">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 2L4 6l4 4"/></svg>
+      </a>
+      <div class="pl-bc-path">
+        <a class="pl-bc-link" href="/admin/catalog">Catalogue</a>
+        <span class="pl-bc-sep">›</span>
+        <a class="pl-bc-link" href="/admin/catalog/<%= svc.id %>/plans"><%= svc.name %></a>
+        <span class="pl-bc-sep">›</span>
+        <span class="pl-bc-current"><%= isNew ? 'New plan' : 'Edit plan' %></span>
+      </div>
+    </div>
+  </div>
+
+  <% if (msg === 'updated') { %><div class="pl-alert pl-alert--ok">Changes saved.</div><% } %>
+  <% if (msg === 'created') { %><div class="pl-alert pl-alert--ok">Plan created.</div><% } %>
+  <% if (msg === 'restored') { %><div class="pl-alert pl-alert--ok">Plan restored — you can edit and publish again.</div><% } %>
+  <% if (err === '1') { %><div class="pl-alert pl-alert--err">Title is required.</div><% } %>
+
+  <% if (svc.booking_mode !== 'plan_booking') { %>
+    <div class="pl-alert pl-alert--warn">Service is not in bookable mode — members may not see plans until you update <a href="/admin/catalog/<%= svc.id %>/edit">service settings</a>.</div>
+  <% } %>
+
+  <h1 class="pl-title" style="margin-bottom:6px;"><%= isNew ? 'Create plan' : 'Edit plan' %></h1>
+  <p class="pl-lead" style="margin-bottom:24px;"><%= isNew ? 'Set price, access, and optional seat limits. You can change everything later.' : 'Update how this plan appears and behaves in the member portal.' %></p>
+
+  <form method="post" action="<%= isNew ? '/admin/catalog/' + svc.id + '/plans/new' : '/admin/catalog/' + svc.id + '/plans/' + plan.id + '/edit' %>" class="pl-form">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+
+    <div class="pl-card">
+      <h2 class="pl-card-title">Basics</h2>
+      <div class="pl-field">
+        <label class="pl-label">Title <span class="pl-req">*</span></label>
+        <input class="pl-input" type="text" name="title" required value="<%= plan ? plan.title : '' %>" placeholder="e.g. Hot desk — monthly" />
+      </div>
+      <div class="pl-field">
+        <label class="pl-label">Description</label>
+        <textarea class="pl-textarea" name="description" rows="4" placeholder="What members get — shown on My workspace."><%= plan ? (plan.description || '') : '' %></textarea>
+      </div>
+      <div class="pl-grid2">
+        <div class="pl-field">
+          <label class="pl-label">Price (₦) <span class="pl-req">*</span></label>
+          <input class="pl-input" type="number" name="price_ngn" min="0" step="1" required value="<%= isNew ? '' : ngn %>" placeholder="0" />
+        </div>
+        <div class="pl-field">
+          <label class="pl-label">Sort order</label>
+          <input class="pl-input" type="number" name="sort_order" min="0" step="1" value="<%= plan ? plan.sort_order : 0 %>" />
+          <span class="pl-hint">Lower numbers appear first in lists.</span>
+        </div>
+      </div>
+      <div class="pl-field pl-toggle">
+        <label class="pl-check">
+          <input type="checkbox" name="active" value="1" <%= !plan || plan.active ? 'checked' : '' %> />
+          <span>Active (visible to members when service is bookable)</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="pl-card">
+      <h2 class="pl-card-title">Included access (optional)</h2>
+      <p class="pl-card-lead">After the linked invoice is paid, access can run for this duration. Leave blank if the plan does not unlock a time window.</p>
+      <div class="pl-grid2">
+        <div class="pl-field">
+          <label class="pl-label">Duration value</label>
+          <input class="pl-input" type="number" name="duration_value" min="1" step="1" value="<%= plan && plan.duration_value ? Number(plan.duration_value) : '' %>" placeholder="—" />
+        </div>
+        <div class="pl-field">
+          <label class="pl-label">Unit</label>
+          <select class="pl-input" name="duration_unit">
+            <option value="" <%= !duSel ? 'selected' : '' %>>— none —</option>
+            <option value="hour" <%= duSel === 'hour' ? 'selected' : '' %>>Hour(s)</option>
+            <option value="day" <%= duSel === 'day' ? 'selected' : '' %>>Day(s)</option>
+            <option value="month" <%= duSel === 'month' ? 'selected' : '' %>>Month(s)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="pl-card">
+      <h2 class="pl-card-title">Credits & sessions</h2>
+      <div class="pl-grid2">
+        <div class="pl-field">
+          <label class="pl-label">Monthly meeting room credits (minutes)</label>
+          <input class="pl-input" type="number" name="monthly_meeting_credit_minutes" min="0" step="1" value="<%= plan ? (Number(plan.monthly_meeting_credit_minutes) || 0) : 0 %>" />
+        </div>
+        <div class="pl-field">
+          <label class="pl-label">Weekly access sessions</label>
+          <input class="pl-input" type="number" name="weekly_access_sessions" min="0" step="1" value="<%= plan && plan.weekly_access_sessions != null ? Number(plan.weekly_access_sessions) : '' %>" placeholder="Optional" />
+        </div>
+      </div>
+    </div>
+
+    <div class="pl-card">
+      <h2 class="pl-card-title">Physical capacity</h2>
+      <p class="pl-card-lead">For desk or office products with a fixed number of seats. Manage unit labels under <a href="/admin/space-utilization">Space utilization</a>.</p>
+      <div class="pl-field pl-toggle">
+        <label class="pl-check">
+          <input type="checkbox" class="js-plan-cap" name="is_capacity_limited" value="1" <%= plan && plan.is_capacity_limited ? 'checked' : '' %> />
+          <span>Capacity-limited (assign seats from the grid)</span>
+        </label>
+      </div>
+      <div class="pl-field js-capacity-seats" style="display:<%= plan && plan.is_capacity_limited ? 'block' : 'none' %>;">
+        <label class="pl-label">Seat capacity</label>
+        <input class="pl-input" type="number" name="capacity_seats" min="0" step="1" value="<%= plan && plan.capacity_profile_total_units != null && plan.capacity_profile_total_units !== '' ? Number(plan.capacity_profile_total_units) : 0 %>" />
+        <span class="pl-hint">Total desks or units for this plan profile.</span>
+      </div>
+    </div>
+
+    <div class="pl-card pl-card--muted">
+      <h2 class="pl-card-title">Advanced</h2>
+      <p class="pl-card-lead">Optional identifiers for seeds, reporting, and automation.</p>
+      <div class="pl-grid2">
+        <div class="pl-field">
+          <label class="pl-label">plan_slug</label>
+          <input class="pl-input" type="text" name="plan_slug" value="<%= plan ? (plan.plan_slug || '') : '' %>" placeholder="stable-key" />
+        </div>
+        <div class="pl-field">
+          <label class="pl-label">plan_kind</label>
+          <input class="pl-input" type="text" name="plan_kind" value="<%= plan ? (plan.plan_kind || '') : '' %>" placeholder="workspace_month, private_office…" />
+        </div>
+      </div>
+    </div>
+
+    <div class="pl-actions">
+      <% if (typeof canMutate !== 'undefined' && canMutate) { %>
+      <button type="submit" class="pl-btn-primary"><%= isNew ? 'Create plan' : 'Save changes' %></button>
+      <% } %>
+      <a class="pl-btn-ghost" href="/admin/catalog/<%= svc.id %>/plans">Cancel</a>
+    </div>
+  </form>
+
+  <% if (!isNew && typeof canArchive !== 'undefined' && canArchive) { %>
+    <div class="pl-danger-zone">
+      <h3 class="pl-danger-title">Archive plan</h3>
+      <p class="pl-card-lead">Hides this plan from the member catalogue. Existing invoices and requests are not removed. You can restore from Archived plans.</p>
+      <form method="post" action="/admin/catalog/<%= svc.id %>/plans/<%= plan.id %>/archive" onsubmit="return confirm('Archive this plan? Members will no longer see it until you restore it.');">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+        <button type="submit" class="pl-btn-danger">Archive plan</button>
+      </form>
+    </div>
+  <% } %>
+</div>
+
+<script>
+(function () {
+  var cb = document.querySelector('.js-plan-cap');
+  var row = document.querySelector('.js-capacity-seats');
+  if (!cb || !row) return;
+  function sync() { row.style.display = cb.checked ? 'block' : 'none'; }
+  sync();
+  cb.addEventListener('change', sync);
+})();
+</script>

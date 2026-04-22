@@ -1,0 +1,42 @@
+<% if (msg === 'archived') { %>
+  <div class="alert alert-success anim anim-2">Service archived.</div>
+<% } %>
+<div class="card anim anim-2" style="margin-bottom:16px;display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;align-items:center;">
+  <p class="page-lead" style="margin:0;">These services are hidden from members until restored.</p>
+  <a class="btn btn-secondary" href="/admin/catalog">Back to catalogue</a>
+</div>
+<div class="table-wrap">
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Service</th>
+        <th>Category</th>
+        <th>Archived</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <% if (!services.length) { %>
+        <tr><td colspan="4" style="padding:20px;color:var(--text-secondary);">No archived services.</td></tr>
+      <% } else { %>
+        <% services.forEach(function (s) { %>
+          <tr>
+            <td><strong><%= s.name %></strong></td>
+            <td><%= s.category_name %></td>
+            <td><%= (s.deleted_at || s.updated_at) ? formatDateTime(s.deleted_at || s.updated_at) : '—' %></td>
+            <td>
+              <% if (typeof canArchive !== 'undefined' && canArchive) { %>
+                <form method="post" action="/admin/catalog/<%= s.id %>/restore" style="display:inline;">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                  <button type="submit" class="link-btn" style="font-size:13px;">Restore</button>
+                </form>
+              <% } else { %>
+                <span class="badge">Super admin</span>
+              <% } %>
+            </td>
+          </tr>
+        <% }); %>
+      <% } %>
+    </tbody>
+  </table>
+</div>

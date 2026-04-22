@@ -7,6 +7,14 @@ const bcrypt = require('bcryptjs');
 const { pool } = require('../lib/db');
 const { requireValidCsrf } = require('../lib/csrf');
 const { requireAdmin } = require('../middleware/adminAuth');
+const {
+  blockViewerMutations,
+  requireSuperAdmin,
+  enforceViewerReadOnlyGet,
+  forbidden403,
+} = require('../lib/adminRbac');
+const { restrictConsultantScope } = require('../middleware/consultantScope');
+const { notifyStaffCustomerServiceRequestActivity } = require('../lib/serviceRequestStaffEmail');
 const { formatNgn, formatDate, formatDateTime } = require('../lib/format');
 const { nextInvoiceNumber } = require('../lib/invoiceNumber');
 const { validateUploadedFile } = require('../lib/uploadGuard');
@@ -26,14 +34,44 @@ const {
   sendInvoiceCreatedEmail,
   sendServiceStatusEmail,
   sendSupportReplyEmail,
+  sendMemberPortalNotificationEmail,
+  sendServiceRequestAdminMessageEmail,
 } = require('../lib/mail');
+const { sendMemberSms } = require('../lib/sms');
+const {
+  getAvailableCreditMinutes,
+  grantManualMeetingCredits,
+  MAX_MANUAL_GRANT_MINUTES,
+  currentCreditPeriodKey,
+  defaultPoolExpiresOn,
+} = require('../lib/meetingCredits');
 const { adminLayoutLocals } = require('../middleware/adminLayoutLocals');
 const { parseDatetimeLocal } = require('../lib/serviceRequestAccess');
 const { onInvoicePaid } = require('../lib/invoicePaidHooks');
+const { loadCoreWorkspacePlanCatalogue, resolveTierIdForServicePlan } = require('../lib/membershipCatalogue');
+const { activatePendingWorkspaceMemberPlan } = require('../lib/workspacePlanActivation');
+const { purgeTestMembers } = require('../lib/purgeTestMemberData');
+const { markdownDocToHtml } = require('../lib/knowledgeBase');
 
 const router = express.Router();
 router.use(requireAdmin);
 router.use(adminLayoutLocals);
+router.use(restrictConsultantScope);
+router.use(enforceViewerReadOnlyGet);
+router.use(blockViewerMutations);
+
+async function assertServiceRequestAccess(req, res, serviceRequestId) {
+  const { rows } = await pool.query(
+    `SELECT * FROM service_requests WHERE id = $1::uuid AND deleted_at IS NULL`,
+    [serviceRequestId]
+  );
+  const sr = rows[0];
+  if (!sr) return { error: 'missing' };
+  if (res.locals.isConsultant && sr.assigned_admin_id !== res.locals.currentAdmin.id) {
+    return { error: 'forbidden' };
+  }
+  return { sr };
+}
 
 function parsePlanDurationFields(body) {
   const raw = String(body.duration_value ?? '').trim();
@@ -45,6 +83,34 @@ function parsePlanDurationFields(body) {
     return { duration_value: null, duration_unit: null };
   }
   return { duration_value, duration_unit };
+}
+
+/** Keeps plan_capacity_profiles in sync when catalogue plans toggle capacity limits. */
+async function syncCapacityProfileForPlan(pool, servicePlanId, isLimited, capacitySeatsRaw) {
+  const seats = Math.max(0, Math.floor(Number(capacitySeatsRaw) || 0));
+  const { rows } = await pool.query(
+    `SELECT id FROM plan_capacity_profiles WHERE service_plan_id = $1::uuid AND deleted_at IS NULL`,
+    [servicePlanId]
+  );
+  if (isLimited) {
+    if (rows[0]) {
+      await pool.query(
+        `UPDATE plan_capacity_profiles SET total_units = $2, updated_at = now() WHERE id = $1::uuid`,
+        [rows[0].id, seats]
+      );
+    } else {
+      await pool.query(
+        `INSERT INTO plan_capacity_profiles (service_plan_id, total_units, auto_assign, waitlist_enabled)
+         VALUES ($1::uuid, $2, false, true)`,
+        [servicePlanId, seats]
+      );
+    }
+  } else if (rows[0]) {
+    await pool.query(
+      `UPDATE plan_capacity_profiles SET total_units = 0, updated_at = now() WHERE id = $1::uuid`,
+      [rows[0].id]
+    );
+  }
 }
 
 function slugify(text) {
@@ -153,12 +219,45 @@ router.get('/', async (req, res) => {
   });
 });
 
+router.get('/help', async (req, res) => {
+  try {
+    const contentHtml = await markdownDocToHtml('ADMIN_USER_GUIDE.md');
+    res.render('admin/knowledge-base', {
+      layout: 'layouts/admin',
+      title: 'Knowledge base',
+      pageSub: 'Admin portal — how-to guides and feature reference',
+      contentHtml,
+      kbMode: 'main',
+    });
+  } catch (e) {
+    console.error('[admin] knowledge base', e);
+    res.status(500).send('Could not load the knowledge base.');
+  }
+});
+
+router.get('/help/screenshots', async (req, res) => {
+  try {
+    const contentHtml = await markdownDocToHtml('USER_GUIDE_SCREENSHOTS.md');
+    res.render('admin/knowledge-base', {
+      layout: 'layouts/admin',
+      title: 'Screenshot checklist',
+      pageSub: 'Documentation image list (member & admin)',
+      contentHtml,
+      kbMode: 'screenshots',
+    });
+  } catch (e) {
+    console.error('[admin] screenshot doc', e);
+    res.status(500).send('Could not load this page.');
+  }
+});
+
 router.get('/catalog', async (req, res) => {
   const cats = await pool.query(`SELECT * FROM service_categories ORDER BY sort_order, id`);
   const services = await pool.query(
     `SELECT s.*, c.name AS category_name
      FROM services s
      JOIN service_categories c ON c.id = s.category_id
+     WHERE s.deleted_at IS NULL
      ORDER BY c.sort_order, s.sort_order, s.id`
   );
   res.render('admin/catalog', {
@@ -171,6 +270,46 @@ router.get('/catalog', async (req, res) => {
     err: req.query.err || '',
     formatNgn,
   });
+});
+
+router.get('/catalog/archived', async (req, res) => {
+  const cats = await pool.query(`SELECT * FROM service_categories ORDER BY sort_order, id`);
+  const services = await pool.query(
+    `SELECT s.*, c.name AS category_name
+     FROM services s
+     JOIN service_categories c ON c.id = s.category_id
+     WHERE s.deleted_at IS NOT NULL
+     ORDER BY s.deleted_at DESC NULLS LAST, s.id DESC`
+  );
+  res.render('admin/catalog-archived', {
+    layout: 'layouts/admin',
+    title: 'Archived services',
+    pageSub: 'Soft-removed from the member catalogue — restore to publish again',
+    categories: cats.rows,
+    services: services.rows,
+    msg: req.query.msg || '',
+    formatNgn,
+    formatDateTime,
+  });
+});
+
+/** GET is not used to archive (POST + CSRF). Redirect bookmarked / guessed URLs to the list. */
+router.get('/catalog/:id/archive', (req, res) => {
+  res.redirect(302, '/admin/catalog/archived');
+});
+
+router.post('/catalog/:id/archive', requireValidCsrf, requireSuperAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.redirect('/admin/catalog');
+  await pool.query(`UPDATE services SET deleted_at = now(), updated_at = now() WHERE id = $1 AND deleted_at IS NULL`, [id]);
+  res.redirect('/admin/catalog/archived?msg=archived');
+});
+
+router.post('/catalog/:id/restore', requireValidCsrf, requireSuperAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.redirect('/admin/catalog/archived');
+  await pool.query(`UPDATE services SET deleted_at = NULL, updated_at = now() WHERE id = $1`, [id]);
+  res.redirect('/admin/catalog?msg=restored');
 });
 
 router.post('/catalog/sort', requireValidCsrf, async (req, res) => {
@@ -236,7 +375,7 @@ router.get('/catalog/:id/edit', async (req, res) => {
   const id = Number(req.params.id);
   const { rows } = await pool.query(
     `SELECT s.*, c.name AS category_name FROM services s
-     JOIN service_categories c ON c.id = s.category_id WHERE s.id = $1`,
+     JOIN service_categories c ON c.id = s.category_id WHERE s.id = $1 AND s.deleted_at IS NULL`,
     [id]
   );
   if (!rows[0]) return res.status(404).send('Not found');
@@ -294,18 +433,24 @@ router.get('/catalog/:serviceId/plans', async (req, res) => {
   const serviceId = Number(req.params.serviceId);
   const { rows: svc } = await pool.query(
     `SELECT s.*, c.name AS category_name FROM services s
-     JOIN service_categories c ON c.id = s.category_id WHERE s.id = $1`,
+     JOIN service_categories c ON c.id = s.category_id WHERE s.id = $1 AND s.deleted_at IS NULL`,
     [serviceId]
   );
   if (!svc[0]) return res.status(404).send('Not found');
   const plans = await pool.query(
-    `SELECT * FROM service_plans WHERE service_id = $1 AND deleted_at IS NULL ORDER BY sort_order, id`,
+    `SELECT sp.*,
+       (SELECT p.total_units FROM plan_capacity_profiles p
+        WHERE p.service_plan_id = sp.id AND p.deleted_at IS NULL LIMIT 1) AS capacity_profile_total_units
+     FROM service_plans sp
+     WHERE sp.service_id = $1 AND sp.deleted_at IS NULL
+     ORDER BY sp.sort_order, sp.id`,
     [serviceId]
   );
   res.render('admin/service-plans', {
     layout: 'layouts/admin',
     title: `Plans — ${svc[0].name}`,
     pageSub: svc[0].category_name,
+    hideAdminHeader: true,
     svc: svc[0],
     plans: plans.rows,
     msg: req.query.msg || '',
@@ -314,8 +459,95 @@ router.get('/catalog/:serviceId/plans', async (req, res) => {
   });
 });
 
+router.get('/catalog/:serviceId/plans/archived', async (req, res) => {
+  const serviceId = Number(req.params.serviceId);
+  const { rows: svc } = await pool.query(
+    `SELECT s.*, c.name AS category_name FROM services s
+     JOIN service_categories c ON c.id = s.category_id WHERE s.id = $1`,
+    [serviceId]
+  );
+  if (!svc[0]) return res.status(404).send('Not found');
+  const plans = await pool.query(
+    `SELECT sp.*,
+       (SELECT p.total_units FROM plan_capacity_profiles p
+        WHERE p.service_plan_id = sp.id AND p.deleted_at IS NULL LIMIT 1) AS capacity_profile_total_units
+     FROM service_plans sp
+     WHERE sp.service_id = $1 AND sp.deleted_at IS NOT NULL
+     ORDER BY sp.updated_at DESC NULLS LAST, sp.id`,
+    [serviceId]
+  );
+  res.render('admin/service-plans-archived', {
+    layout: 'layouts/admin',
+    title: `Archived plans — ${svc[0].name}`,
+    pageSub: svc[0].category_name,
+    hideAdminHeader: true,
+    svc: svc[0],
+    plans: plans.rows,
+    msg: req.query.msg || '',
+    formatNgn,
+  });
+});
+
+router.get('/catalog/:serviceId/plans/new', async (req, res) => {
+  const serviceId = Number(req.params.serviceId);
+  const { rows: svc } = await pool.query(
+    `SELECT s.*, c.name AS category_name FROM services s
+     JOIN service_categories c ON c.id = s.category_id WHERE s.id = $1 AND s.deleted_at IS NULL`,
+    [serviceId]
+  );
+  if (!svc[0]) return res.status(404).send('Not found');
+  res.render('admin/service-plan-edit', {
+    layout: 'layouts/admin',
+    title: `New plan — ${svc[0].name}`,
+    pageSub: svc[0].category_name,
+    hideAdminHeader: true,
+    svc: svc[0],
+    plan: null,
+    msg: req.query.msg || '',
+    err: req.query.err || '',
+    formatNgn,
+  });
+});
+
+router.get('/catalog/:serviceId/plans/:planId/edit', async (req, res) => {
+  const serviceId = Number(req.params.serviceId);
+  const planId = req.params.planId;
+  if (!isUuid(planId)) return res.status(404).send('Not found');
+  const { rows: svc } = await pool.query(
+    `SELECT s.*, c.name AS category_name FROM services s
+     JOIN service_categories c ON c.id = s.category_id WHERE s.id = $1 AND s.deleted_at IS NULL`,
+    [serviceId]
+  );
+  if (!svc[0]) return res.status(404).send('Not found');
+  const { rows: plans } = await pool.query(
+    `SELECT sp.*,
+       (SELECT p.total_units FROM plan_capacity_profiles p
+        WHERE p.service_plan_id = sp.id AND p.deleted_at IS NULL LIMIT 1) AS capacity_profile_total_units
+     FROM service_plans sp
+     WHERE sp.id = $1::uuid AND sp.service_id = $2 AND sp.deleted_at IS NULL`,
+    [planId, serviceId]
+  );
+  if (!plans[0]) return res.status(404).send('Not found');
+  res.render('admin/service-plan-edit', {
+    layout: 'layouts/admin',
+    title: `Edit plan — ${plans[0].title}`,
+    pageSub: svc[0].category_name,
+    hideAdminHeader: true,
+    svc: svc[0],
+    plan: plans[0],
+    msg: req.query.msg || '',
+    err: req.query.err || '',
+    formatNgn,
+  });
+});
+
 router.post('/catalog/:serviceId/plans/new', requireValidCsrf, async (req, res) => {
   const serviceId = Number(req.params.serviceId);
+  const { rows: svOk } = await pool.query(
+    `SELECT id FROM services WHERE id = $1 AND deleted_at IS NULL`,
+    [serviceId]
+  );
+  if (!svOk[0]) return res.redirect('/admin/catalog?err=service');
   const title = String(req.body.title || '').trim();
   const description = String(req.body.description || '').trim();
   const sort_order = Math.max(0, Math.floor(Number(req.body.sort_order) || 0));
@@ -330,13 +562,15 @@ router.post('/catalog/:serviceId/plans/new', requireValidCsrf, async (req, res) 
   const weekly_access_sessions =
     was === '' ? null : Math.max(0, Math.floor(Number(req.body.weekly_access_sessions)));
   const is_capacity_limited = String(req.body.is_capacity_limited || '') === '1';
-  if (!title) return res.redirect(`/admin/catalog/${serviceId}/plans?err=1`);
-  await pool.query(
+  const capacity_seats = Math.max(0, Math.floor(Number(req.body.capacity_seats || 0)));
+  if (!title) return res.redirect(`/admin/catalog/${serviceId}/plans/new?err=1`);
+  const ins = await pool.query(
     `INSERT INTO service_plans (
        service_id, title, description, price_cents, sort_order, active, duration_value, duration_unit,
        plan_slug, plan_kind, monthly_meeting_credit_minutes, weekly_access_sessions, is_capacity_limited
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+     RETURNING id`,
     [
       serviceId,
       title,
@@ -353,12 +587,18 @@ router.post('/catalog/:serviceId/plans/new', requireValidCsrf, async (req, res) 
       is_capacity_limited,
     ]
   );
-  res.redirect(`/admin/catalog/${serviceId}/plans?msg=created`);
+  await syncCapacityProfileForPlan(pool, ins.rows[0].id, is_capacity_limited, capacity_seats);
+  res.redirect(`/admin/catalog/${serviceId}/plans/${ins.rows[0].id}/edit?msg=created`);
 });
 
 router.post('/catalog/:serviceId/plans/:planId/edit', requireValidCsrf, async (req, res) => {
   const serviceId = Number(req.params.serviceId);
   const planId = req.params.planId;
+  const { rows: svOk } = await pool.query(
+    `SELECT id FROM services WHERE id = $1 AND deleted_at IS NULL`,
+    [serviceId]
+  );
+  if (!svOk[0]) return res.redirect('/admin/catalog?err=service');
   const title = String(req.body.title || '').trim();
   const description = String(req.body.description || '').trim();
   const sort_order = Math.max(0, Math.floor(Number(req.body.sort_order) || 0));
@@ -373,7 +613,8 @@ router.post('/catalog/:serviceId/plans/:planId/edit', requireValidCsrf, async (r
   const weekly_access_sessions =
     was === '' ? null : Math.max(0, Math.floor(Number(req.body.weekly_access_sessions)));
   const is_capacity_limited = String(req.body.is_capacity_limited || '') === '1';
-  if (!title) return res.redirect(`/admin/catalog/${serviceId}/plans?err=1`);
+  const capacity_seats = Math.max(0, Math.floor(Number(req.body.capacity_seats || 0)));
+  if (!title) return res.redirect(`/admin/catalog/${serviceId}/plans/${planId}/edit?err=1`);
   await pool.query(
     `UPDATE service_plans SET title = $3, description = $4, price_cents = $5, sort_order = $6, active = $7,
      duration_value = $8, duration_unit = $9,
@@ -397,32 +638,82 @@ router.post('/catalog/:serviceId/plans/:planId/edit', requireValidCsrf, async (r
       is_capacity_limited,
     ]
   );
-  res.redirect(`/admin/catalog/${serviceId}/plans?msg=updated`);
+  await syncCapacityProfileForPlan(pool, planId, is_capacity_limited, capacity_seats);
+  res.redirect(`/admin/catalog/${serviceId}/plans/${planId}/edit?msg=updated`);
 });
 
-router.post('/catalog/:serviceId/plans/:planId/delete', requireValidCsrf, async (req, res) => {
+async function archiveServicePlan(req, res) {
   const serviceId = Number(req.params.serviceId);
   const planId = req.params.planId;
   await pool.query(
-    `UPDATE service_plans SET deleted_at = now(), updated_at = now() WHERE id = $1::uuid AND service_id = $2`,
+    `UPDATE service_plans SET deleted_at = now(), updated_at = now() WHERE id = $1::uuid AND service_id = $2 AND deleted_at IS NULL`,
     [planId, serviceId]
   );
-  res.redirect(`/admin/catalog/${serviceId}/plans?msg=deleted`);
+  res.redirect(`/admin/catalog/${serviceId}/plans?msg=archived`);
+}
+
+router.post('/catalog/:serviceId/plans/:planId/archive', requireValidCsrf, requireSuperAdmin, archiveServicePlan);
+
+router.post('/catalog/:serviceId/plans/:planId/delete', requireValidCsrf, requireSuperAdmin, archiveServicePlan);
+
+router.post('/catalog/:serviceId/plans/:planId/restore', requireValidCsrf, requireSuperAdmin, async (req, res) => {
+  const serviceId = Number(req.params.serviceId);
+  const planId = req.params.planId;
+  await pool.query(
+    `UPDATE service_plans SET deleted_at = NULL, updated_at = now() WHERE id = $1::uuid AND service_id = $2`,
+    [planId, serviceId]
+  );
+  res.redirect(`/admin/catalog/${serviceId}/plans/${planId}/edit?msg=restored`);
 });
 
 router.get('/members', async (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
+  const planFilter = String(req.query.plan || 'has_plan').toLowerCase();
+  const crmFilter = String(req.query.crm || 'all').toLowerCase();
+  const portalFilter = String(req.query.portal || 'all').toLowerCase();
+
   let sql = `SELECT m.*, mp.status AS plan_status, mt.name AS tier_name
      FROM members m
      LEFT JOIN member_plans mp ON mp.member_id = m.id AND mp.deleted_at IS NULL AND mp.status = 'active'
      LEFT JOIN membership_tiers mt ON mt.id = mp.tier_id
      WHERE m.deleted_at IS NULL`;
   const params = [];
+
+  if (planFilter === 'has_plan') {
+    sql += ` AND EXISTS (
+      SELECT 1 FROM member_plans mpf
+      WHERE mpf.member_id = m.id AND mpf.deleted_at IS NULL AND mpf.status = 'active'
+    )`;
+  } else if (planFilter === 'no_plan') {
+    sql += ` AND NOT EXISTS (
+      SELECT 1 FROM member_plans mpf
+      WHERE mpf.member_id = m.id AND mpf.deleted_at IS NULL AND mpf.status = 'active'
+    )`;
+  }
+
+  if (crmFilter === 'active') {
+    sql += ` AND lower(trim(coalesce(m.crm_status, ''))) = 'active'`;
+  } else if (crmFilter === 'inactive') {
+    sql += ` AND lower(trim(coalesce(m.crm_status, ''))) = 'inactive'`;
+  }
+
+  if (portalFilter === 'active') {
+    sql += ` AND m.suspended_at IS NULL`;
+  } else if (portalFilter === 'suspended') {
+    sql += ` AND m.suspended_at IS NOT NULL`;
+  }
+
   if (q) {
     params.push('%' + q + '%');
-    sql += ` AND (lower(m.email) LIKE $1 OR lower(m.full_name) LIKE $1)`;
+    const n = params.length;
+    sql += ` AND (
+      lower(m.email) LIKE $${n}
+      OR lower(m.full_name) LIKE $${n}
+      OR lower(coalesce(m.contact_name, '')) LIKE $${n}
+      OR lower(coalesce(m.business_name, '')) LIKE $${n}
+    )`;
   }
-  sql += ' ORDER BY m.created_at DESC LIMIT 200';
+  sql += ' ORDER BY m.created_at DESC LIMIT 500';
   const { rows } = await pool.query(sql, params);
   res.render('admin/members', {
     layout: 'layouts/admin',
@@ -430,6 +721,9 @@ router.get('/members', async (req, res) => {
     members: rows,
     formatDate,
     query: req.query,
+    planFilter,
+    crmFilter,
+    portalFilter,
   });
 });
 
@@ -445,16 +739,67 @@ router.post('/members/new', requireValidCsrf, async (req, res) => {
   const phone = String(req.body.phone || '').trim();
   const password = String(req.body.password || '') || crypto.randomBytes(8).toString('hex');
   const hash = await bcrypt.hash(password, 10);
+  const business_name = String(req.body.business_name || '').trim() || null;
+  const salutation = String(req.body.salutation || '').trim() || null;
+  const first_name = String(req.body.first_name || '').trim() || null;
+  const last_name = String(req.body.last_name || '').trim() || null;
+  const contact_name = String(req.body.contact_name || '').trim() || null;
+  const contact_type = String(req.body.contact_type || '').trim() || null;
+  const billing_state = String(req.body.billing_state || '').trim() || null;
+  const billing_country = String(req.body.billing_country || '').trim() || null;
+  const mobile_phone = String(req.body.mobile_phone || '').trim() || null;
+  const crm_product = String(req.body.crm_product || '').trim() || null;
+  let crm_status = String(req.body.crm_status || 'active').trim().toLowerCase();
+  if (!['active', 'inactive'].includes(crm_status)) crm_status = 'active';
   try {
     await pool.query(
-      `INSERT INTO members (email, password_hash, full_name, phone, email_verified_at)
-       VALUES ($1, $2, $3, $4, now())`,
-      [email, hash, full_name, phone]
+      `INSERT INTO members (
+         email, password_hash, full_name, phone, email_verified_at,
+         business_name, salutation, first_name, last_name, contact_name, contact_type,
+         billing_state, billing_country, mobile_phone, crm_product, crm_status
+       )
+       VALUES ($1, $2, $3, $4, now(), $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+      [
+        email,
+        hash,
+        full_name,
+        phone,
+        business_name,
+        salutation,
+        first_name,
+        last_name,
+        contact_name,
+        contact_type,
+        billing_state,
+        billing_country,
+        mobile_phone,
+        crm_product,
+        crm_status,
+      ]
     );
-    res.redirect('/admin/members?msg=created');
+    res.redirect('/admin/members?plan=all&msg=created');
   } catch (e) {
     res.redirect('/admin/members/new?err=1');
   }
+});
+
+router.get('/members/:id/edit', async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT * FROM members WHERE id = $1::uuid AND deleted_at IS NULL`,
+    [req.params.id]
+  );
+  if (!rows[0]) return res.status(404).send('Not found');
+  res.render('admin/member-edit', {
+    layout: 'layouts/admin',
+    title: 'Edit: ' + rows[0].full_name,
+    pageSub: 'Member details',
+    hideAdminHeader: true,
+    m: rows[0],
+    formatDate,
+    formatDateTime,
+    formatNgn,
+    query: req.query,
+  });
 });
 
 router.get('/members/:id', async (req, res) => {
@@ -464,9 +809,18 @@ router.get('/members/:id', async (req, res) => {
   );
   if (!rows[0]) return res.status(404).send('Not found');
   const m = rows[0];
-  const plans = await pool.query(
-    `SELECT mp.*, mt.name FROM member_plans mp JOIN membership_tiers mt ON mt.id = mp.tier_id
-     WHERE mp.member_id = $1 AND mp.deleted_at IS NULL ORDER BY mp.started_at DESC`,
+  const planHistory = await pool.query(
+    `SELECT mp.*, mt.name AS tier_name,
+            sp.id AS catalogue_plan_id, sp.title AS catalogue_plan_title,
+            s.id AS catalogue_service_id, s.name AS catalogue_service_name,
+            inv.invoice_number AS source_invoice_number
+     FROM member_plans mp
+     JOIN membership_tiers mt ON mt.id = mp.tier_id
+     LEFT JOIN service_plans sp ON sp.id = mt.service_plan_id AND sp.deleted_at IS NULL
+     LEFT JOIN services s ON s.id = sp.service_id AND s.deleted_at IS NULL
+     LEFT JOIN invoices inv ON inv.id = mp.source_invoice_id AND inv.deleted_at IS NULL
+     WHERE mp.member_id = $1::uuid
+     ORDER BY mp.started_at DESC NULLS LAST, mp.created_at DESC NULLS LAST`,
     [m.id]
   );
   const svc = await pool.query(
@@ -486,7 +840,13 @@ router.get('/members/:id', async (req, res) => {
     `SELECT * FROM support_tickets WHERE member_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC`,
     [m.id]
   );
-  const tiers = await pool.query(`SELECT * FROM membership_tiers ORDER BY sort_order`);
+  const { bookableServices, plansByService } = await loadCoreWorkspacePlanCatalogue(pool);
+  let plansByServiceJson = '{}';
+  try {
+    plansByServiceJson = JSON.stringify(plansByService);
+  } catch (e) {
+    console.error('plansByService JSON', e.message);
+  }
   const creditLedger = await pool.query(
     `SELECT * FROM member_meeting_credit_ledger
      WHERE member_id = $1::uuid
@@ -494,23 +854,239 @@ router.get('/members/:id', async (req, res) => {
      LIMIT 8`,
     [m.id]
   );
+  const roomBookings = await pool.query(
+    `SELECT rb.*, mr.name AS room_name, inv.invoice_number
+     FROM room_bookings rb
+     JOIN meeting_rooms mr ON mr.id = rb.meeting_room_id
+     LEFT JOIN invoices inv ON inv.id = rb.invoice_id
+     WHERE rb.member_id = $1::uuid AND rb.deleted_at IS NULL
+     ORDER BY rb.starts_at DESC
+     LIMIT 50`,
+    [m.id]
+  );
+  const meetingRooms = await pool.query(
+    `SELECT id, name FROM meeting_rooms WHERE deleted_at IS NULL ORDER BY sort_order, name`
+  );
+  const hubTz = process.env.PORTAL_TZ || 'Africa/Lagos';
+  const { rows: resetRows } = await pool.query(
+    `SELECT (date_trunc('month', timezone($1::text, now())) + interval '1 month')::date AS d`,
+    [hubTz]
+  );
+  const creditResetLabel = formatDate(resetRows[0].d);
+
+  const { rows: outRows } = await pool.query(
+    `SELECT COALESCE(SUM(total_cents),0)::bigint AS t, COUNT(*)::int AS c
+     FROM invoices
+     WHERE member_id = $1::uuid AND deleted_at IS NULL
+       AND status IN ('unpaid','sent','overdue','awaiting_confirmation')`,
+    [m.id]
+  );
+  const { rows: paidRows } = await pool.query(
+    `SELECT COALESCE(SUM(total_cents),0)::bigint AS t FROM invoices
+     WHERE member_id = $1::uuid AND deleted_at IS NULL AND status = 'paid'`,
+    [m.id]
+  );
+
+  const svcRows = svc.rows;
+  const svcSubmitted = svcRows.filter((r) => String(r.status) === 'Submitted').length;
+  const svcComplete = svcRows.filter((r) =>
+    /complete|fulfilled|done/i.test(String(r.status || ''))
+  ).length;
+
+  const rbRows = roomBookings.rows;
+  const rbPending = rbRows.filter((r) => r.status === 'pending_payment').length;
+  const rbCancelled = rbRows.filter((r) => r.status === 'cancelled').length;
+
+  const activePlan =
+    planHistory.rows.find((p) => p.status === 'active' && !p.deleted_at) || null;
+  let assignPlanSelection = { serviceId: null, planId: null };
+  if (activePlan && activePlan.catalogue_service_id && activePlan.catalogue_plan_id) {
+    assignPlanSelection = {
+      serviceId: activePlan.catalogue_service_id,
+      planId: activePlan.catalogue_plan_id,
+    };
+  }
+  let creditSummary;
+  try {
+    creditSummary = await getAvailableCreditMinutes(pool, m.id);
+  } catch (e) {
+    console.error(e);
+    creditSummary = { available: 0, granted: 0, used: 0, period_month: null, pool_expires_on: null };
+  }
+
+  const planExpiresAt = activePlan && activePlan.renewal_at ? formatDate(activePlan.renewal_at) : null;
+
+  let creditExpiresOnInput = '';
+  try {
+    if (creditSummary && creditSummary.pool_expires_on) {
+      const p = creditSummary.pool_expires_on;
+      const d = p instanceof Date ? p : new Date(p);
+      if (!Number.isNaN(d.getTime())) creditExpiresOnInput = d.toISOString().slice(0, 10);
+    }
+    if (!creditExpiresOnInput) {
+      const pk = await currentCreditPeriodKey(pool, m.id);
+      const defExp = await defaultPoolExpiresOn(pool, pk, m.id);
+      const d = defExp instanceof Date ? defExp : new Date(defExp);
+      if (!Number.isNaN(d.getTime())) creditExpiresOnInput = d.toISOString().slice(0, 10);
+    }
+  } catch (_) {
+    /* ignore */
+  }
+
+  let creditExpiresLabel = '';
+  try {
+    if (creditSummary && creditSummary.pool_expires_on) {
+      creditExpiresLabel = formatDate(creditSummary.pool_expires_on);
+    } else if (activePlan && activePlan.renewal_at) {
+      creditExpiresLabel = formatDate(activePlan.renewal_at);
+    }
+  } catch (_) {
+    /* ignore */
+  }
+  const creditPeriodExplain = activePlan && activePlan.renewal_at
+    ? 'Period follows the active plan renewal date when credits apply.'
+    : 'Period follows the calendar month (hub timezone) when there is no renewal date.';
+  let creditHeroSubtitle = '';
+  if (creditExpiresLabel) {
+    creditHeroSubtitle = `Valid until ${creditExpiresLabel}`;
+  } else if (creditSummary && creditSummary.period_month) {
+    try {
+      creditHeroSubtitle = formatDate(creditSummary.period_month);
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
   res.render('admin/member-detail', {
     layout: 'layouts/admin',
     title: m.full_name,
     pageSub: 'Member record',
+    hideAdminHeader: true,
     m,
-    plans: plans.rows,
-    svc: svc.rows,
+    planHistory: planHistory.rows,
+    activePlan,
+    planExpiresAt,
+    svc: svcRows,
+    svcSubmitted,
+    svcComplete,
     inv: inv.rows,
     docs: docs.rows,
     tickets: tickets.rows,
-    tiers: tiers.rows,
+    bookableServices,
+    plansByService,
+    plansByServiceJson,
+    assignPlanSelection,
     creditLedger: creditLedger.rows,
+    creditSummary,
+    creditResetLabel,
+    creditExpiresOnInput,
+    creditExpiresLabel,
+    creditPeriodExplain,
+    creditHeroSubtitle,
+    maxManualCreditMinutes: MAX_MANUAL_GRANT_MINUTES,
+    roomBookings: rbRows,
+    meetingRooms: meetingRooms.rows,
+    rbPending,
+    rbCancelled,
+    accountOutstandingCents: Number(outRows[0].t) || 0,
+    unpaidInvoiceCount: Number(outRows[0].c) || 0,
+    totalPaidCents: Number(paidRows[0].t) || 0,
     formatDate,
     formatDateTime,
     formatNgn,
     query: req.query,
   });
+});
+
+router.post('/members/:id/profile', requireValidCsrf, async (req, res) => {
+  const id = req.params.id;
+  const full_name = String(req.body.full_name || '').trim();
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const phone = String(req.body.phone || '').trim();
+  const newPassword = String(req.body.new_password || '').trim();
+  const returnTo = String(req.body.return_to || '').trim() === 'edit' ? 'edit' : 'detail';
+  const errBase = returnTo === 'edit' ? `/admin/members/${id}/edit` : `/admin/members/${id}`;
+
+  if (!full_name || !email || !phone) {
+    return res.redirect(`${errBase}?err=invalid`);
+  }
+
+  const dup = await pool.query(
+    `SELECT id FROM members WHERE lower(trim(email)) = lower(trim($1)) AND id <> $2::uuid AND deleted_at IS NULL LIMIT 1`,
+    [email, id]
+  );
+  if (dup.rows[0]) {
+    return res.redirect(`${errBase}?err=email_taken`);
+  }
+
+  const business_name = String(req.body.business_name || '').trim() || null;
+  const business_type = String(req.body.business_type || '').trim() || null;
+  const industry = String(req.body.industry || '').trim() || null;
+  const website = String(req.body.website || '').trim() || null;
+  const cac_number = String(req.body.cac_number || '').trim() || null;
+  const salutation = String(req.body.salutation || '').trim() || null;
+  const first_name = String(req.body.first_name || '').trim() || null;
+  const last_name = String(req.body.last_name || '').trim() || null;
+  const contact_name = String(req.body.contact_name || '').trim() || null;
+  const contact_type = String(req.body.contact_type || '').trim() || null;
+  const billing_state = String(req.body.billing_state || '').trim() || null;
+  const billing_country = String(req.body.billing_country || '').trim() || null;
+  const mobile_phone = String(req.body.mobile_phone || '').trim() || null;
+  const crm_product = String(req.body.crm_product || '').trim() || null;
+  let crm_status = String(req.body.crm_status || '').trim().toLowerCase();
+  if (!['active', 'inactive'].includes(crm_status)) crm_status = 'inactive';
+
+  const baseArgs = [
+    id,
+    full_name,
+    email,
+    phone,
+    business_name,
+    business_type,
+    industry,
+    website,
+    cac_number,
+    salutation,
+    first_name,
+    last_name,
+    contact_name,
+    contact_type,
+    billing_state,
+    billing_country,
+    mobile_phone,
+    crm_product,
+    crm_status,
+  ];
+
+  if (newPassword.length >= 8) {
+    const hash = await bcrypt.hash(newPassword, 10);
+    await pool.query(
+      `UPDATE members SET
+         full_name = $2, email = $3, phone = $4,
+         business_name = $5, business_type = $6, industry = $7, website = $8, cac_number = $9,
+         salutation = $10, first_name = $11, last_name = $12, contact_name = $13, contact_type = $14,
+         billing_state = $15, billing_country = $16, mobile_phone = $17, crm_product = $18,
+         crm_status = $19, password_hash = $20, updated_at = now()
+       WHERE id = $1::uuid AND deleted_at IS NULL`,
+      [...baseArgs, hash]
+    );
+  } else {
+    await pool.query(
+      `UPDATE members SET
+         full_name = $2, email = $3, phone = $4,
+         business_name = $5, business_type = $6, industry = $7, website = $8, cac_number = $9,
+         salutation = $10, first_name = $11, last_name = $12, contact_name = $13, contact_type = $14,
+         billing_state = $15, billing_country = $16, mobile_phone = $17, crm_product = $18, crm_status = $19,
+         updated_at = now()
+       WHERE id = $1::uuid AND deleted_at IS NULL`,
+      baseArgs
+    );
+  }
+
+  if (returnTo === 'edit') {
+    return res.redirect(`/admin/members/${id}/edit?msg=profile_saved`);
+  }
+  res.redirect(`/admin/members/${id}?msg=profile_saved`);
 });
 
 router.post('/members/:id/note', requireValidCsrf, async (req, res) => {
@@ -542,79 +1118,125 @@ router.post('/members/:id/notify', requireValidCsrf, async (req, res) => {
   const title = String(req.body.title || '').trim();
   const message = String(req.body.message || '').trim();
   const link = String(req.body.link_url || '').trim() || null;
+  const sendEmail = req.body.send_email === '1' || req.body.send_email === 'on';
+  const sendSms = req.body.send_sms === '1' || req.body.send_sms === 'on';
+  const memberId = req.params.id;
   if (title && message) {
     await notifyMember({
-      memberId: req.params.id,
+      memberId,
       title,
       message,
       linkUrl: link,
     });
+    const { rows: mem } = await pool.query(
+      `SELECT email, full_name, phone FROM members WHERE id = $1::uuid AND deleted_at IS NULL`,
+      [memberId]
+    );
+    const row = mem[0];
+    const base = process.env.BASE_URL || '';
+    if (sendEmail && row && row.email) {
+      await sendMemberPortalNotificationEmail({
+        to: row.email,
+        name: row.full_name || 'Member',
+        title,
+        message,
+        linkPath: link,
+        portalUrl: base,
+      });
+    }
+    if (sendSms && row && row.phone) {
+      await sendMemberSms({
+        phone: row.phone,
+        message: `${title}\n\n${message}`,
+      });
+    }
   }
-  res.redirect(`/admin/members/${req.params.id}`);
+  res.redirect(`/admin/members/${memberId}?msg=notify`);
+});
+
+router.post('/members/:id/workspace-plan/activate', requireValidCsrf, async (req, res) => {
+  const memberId = req.params.id;
+  const memberPlanId = String(req.body.member_plan_id || '').trim();
+  const startAt = parseDatetimeLocal(req.body.access_starts_at);
+  if (!/^[\da-f-]{36}$/i.test(memberPlanId) || !startAt) {
+    return res.redirect(`/admin/members/${memberId}?err=activate_start`);
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await activatePendingWorkspaceMemberPlan(client, {
+      memberPlanId,
+      memberId,
+      accessStartsAt: startAt,
+      fromMemberPortal: false,
+    });
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('activatePendingWorkspaceMemberPlan', e);
+    const q = e.message === 'invoice_not_paid' ? 'activate_invoice' : 'activate_failed';
+    return res.redirect(`/admin/members/${memberId}?err=${q}`);
+  } finally {
+    client.release();
+  }
+  res.redirect(`/admin/members/${memberId}?msg=plan_activated`);
 });
 
 router.post('/members/:id/plan', requireValidCsrf, async (req, res) => {
-  const tierId = Number(req.body.tier_id);
+  const servicePlanId = String(req.body.service_plan_id || '').trim();
+  const resolved = await resolveTierIdForServicePlan(pool, servicePlanId);
+  if (!resolved.ok) {
+    const err = resolved.code === 'invalid_plan' ? 'plan_invalid' : 'plan_tier';
+    return res.redirect(`/admin/members/${req.params.id}?err=${err}`);
+  }
+  const tierId = resolved.tierId;
   const status = String(req.body.status || 'active');
   const started = req.body.started_at || new Date().toISOString().slice(0, 10);
   const renewal = req.body.renewal_at || null;
   await pool.query(
     `UPDATE member_plans SET deleted_at = now(), updated_at = now()
-     WHERE member_id = $1 AND deleted_at IS NULL AND status = 'active'`,
+     WHERE member_id = $1::uuid AND deleted_at IS NULL AND status = 'active'`,
     [req.params.id]
   );
   await pool.query(
     `INSERT INTO member_plans (member_id, tier_id, status, started_at, renewal_at)
-     VALUES ($1, $2, $3, $4::date, $5::date)`,
+     VALUES ($1::uuid, $2, $3, $4::date, $5::date)`,
     [req.params.id, tierId, status, started, renewal || null]
   );
-  res.redirect(`/admin/members/${req.params.id}`);
+  res.redirect(`/admin/members/${req.params.id}?msg=plan_saved`);
 });
 
-router.post('/members/:id/meeting-credits', requireValidCsrf, async (req, res) => {
+router.post('/members/:id/plan/remove', requireValidCsrf, requireSuperAdmin, async (req, res) => {
+  await pool.query(
+    `UPDATE member_plans SET deleted_at = now(), updated_at = now()
+     WHERE member_id = $1::uuid AND deleted_at IS NULL AND status = 'active'`,
+    [req.params.id]
+  );
+  res.redirect(`/admin/members/${req.params.id}?msg=plan_removed`);
+});
+
+router.post('/members/:id/meeting-credits/grant', requireValidCsrf, requireSuperAdmin, async (req, res) => {
   const memberId = req.params.id;
-  const adminId = res.locals.currentAdmin.id;
-  const dg = Math.floor(Number(req.body.delta_granted || 0));
-  const du = Math.floor(Number(req.body.delta_used || 0));
-  if (!dg && !du) return res.redirect(`/admin/members/${memberId}?err=credits`);
-  let pmRaw = String(req.body.period_month || '').trim();
-  let pmDate;
-  if (/^\d{4}-\d{2}$/.test(pmRaw)) {
-    pmDate = `${pmRaw}-01`;
-  } else if (/^\d{4}-\d{2}-\d{2}$/.test(pmRaw)) {
-    pmDate = pmRaw;
-  } else {
-    const { rows } = await pool.query(
-      `SELECT (date_trunc('month', timezone($1::text, now())))::date AS d`,
-      [process.env.PORTAL_TZ || 'Africa/Lagos']
-    );
-    pmDate = rows[0].d;
+  const expiresOn = String(req.body.expires_on || '').trim();
+  const minutes = req.body.minutes;
+  const note = String(req.body.note || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(expiresOn)) {
+    return res.redirect(`/admin/members/${memberId}?err=credit_period`);
   }
   try {
-    await pool.query(
-      `INSERT INTO member_meeting_credit_ledger (member_id, period_month, granted_minutes, used_minutes)
-       VALUES ($1::uuid, $2::date, 0, 0)
-       ON CONFLICT (member_id, period_month) DO NOTHING`,
-      [memberId, pmDate]
-    );
-    await pool.query(
-      `UPDATE member_meeting_credit_ledger
-       SET granted_minutes = GREATEST(0, granted_minutes + $3::int),
-           used_minutes = GREATEST(0, used_minutes + $4::int),
-           updated_at = now()
-       WHERE member_id = $1::uuid AND period_month = $2::date`,
-      [memberId, pmDate, dg, du]
-    );
-    await pool.query(
-      `INSERT INTO meeting_credit_events (member_id, period_month, delta_granted, delta_used, reason, admin_id)
-       VALUES ($1::uuid, $2::date, $3, $4, 'admin_adjust', $5::uuid)`,
-      [memberId, pmDate, dg, du, adminId]
-    );
+    await grantManualMeetingCredits(pool, {
+      memberId,
+      expiresOnYmd: expiresOn,
+      minutes,
+      adminId: res.locals.currentAdmin.id,
+      note,
+    });
   } catch (e) {
-    console.error(e);
-    return res.redirect(`/admin/members/${memberId}?err=credits_save`);
+    console.error('grantManualMeetingCredits', e.message);
+    const code = e.message === 'member_not_found' ? 'credit_member' : 'credit_grant';
+    return res.redirect(`/admin/members/${memberId}?err=${code}`);
   }
-  res.redirect(`/admin/members/${memberId}?msg=credits`);
+  res.redirect(`/admin/members/${memberId}?msg=credit_granted`);
 });
 
 router.post(
@@ -674,6 +1296,10 @@ router.get('/service-requests', async (req, res) => {
      JOIN services sv ON sv.id = sr.service_id
      WHERE sr.deleted_at IS NULL`;
   const params = [];
+  if (res.locals.isConsultant) {
+    params.push(res.locals.currentAdmin.id);
+    sql += ` AND sr.assigned_admin_id = $${params.length}`;
+  }
   if (st) {
     params.push(st);
     sql += ` AND sr.status = $${params.length}`;
@@ -702,21 +1328,34 @@ router.get('/service-requests/:id', async (req, res) => {
   );
   if (!rows[0]) return res.status(404).send('Not found');
   const sr = rows[0];
+  if (res.locals.isConsultant && sr.assigned_admin_id !== res.locals.currentAdmin.id) {
+    return forbidden403(
+      req,
+      res,
+      'Not assigned',
+      'This service request is not assigned to you.'
+    );
+  }
   const updates = await pool.query(
     `SELECT * FROM service_request_updates WHERE service_request_id = $1 AND deleted_at IS NULL ORDER BY created_at`,
     [req.params.id]
   );
   const msgs = await pool.query(
-    `SELECT * FROM service_request_messages WHERE service_request_id = $1 AND deleted_at IS NULL ORDER BY created_at`,
+    `SELECT srm.*, md.original_name AS attachment_name
+     FROM service_request_messages srm
+     LEFT JOIN member_documents md ON md.id = srm.attachment_document_id
+     WHERE srm.service_request_id = $1 AND srm.deleted_at IS NULL ORDER BY srm.created_at`,
     [req.params.id]
   );
   const docs = await pool.query(
     `SELECT * FROM member_documents WHERE service_request_id = $1 AND deleted_at IS NULL`,
     [req.params.id]
   );
-  const admins = await pool.query(
-    `SELECT id, username FROM portal_admin_users WHERE deleted_at IS NULL AND active = true`
-  );
+  const admins = res.locals.isConsultant
+    ? { rows: [] }
+    : await pool.query(
+        `SELECT id, username FROM portal_admin_users WHERE deleted_at IS NULL AND active = true`
+      );
   const invIdSet = new Set();
   if (sr.invoice_id) invIdSet.add(sr.invoice_id);
   const linkedByCol = await pool.query(
@@ -752,6 +1391,9 @@ router.get('/service-requests/:id', async (req, res) => {
 });
 
 router.post('/service-requests/:id/generate-invoice', requireValidCsrf, async (req, res) => {
+  if (res.locals.isConsultant) {
+    return forbidden403(req, res, 'Not available', 'Only managers or super admins can create invoices.');
+  }
   const id = req.params.id;
   const lineDesc = String(req.body.line_desc || '').trim();
   const priceNgn = Number(req.body.amount_ngn || 0);
@@ -816,6 +1458,11 @@ router.post('/service-requests/:id/generate-invoice', requireValidCsrf, async (r
 
 router.post('/service-requests/:id/status', requireValidCsrf, async (req, res) => {
   const id = req.params.id;
+  const access = await assertServiceRequestAccess(req, res, id);
+  if (access.error === 'missing') return res.status(404).send('Not found');
+  if (access.error === 'forbidden') {
+    return forbidden403(req, res, 'Not assigned', 'This service request is not assigned to you.');
+  }
   const status = String(req.body.status || '');
   const adminId = res.locals.currentAdmin.id;
   const { rows: prevRows } = await pool.query(`SELECT status FROM service_requests WHERE id = $1::uuid`, [id]);
@@ -898,19 +1545,101 @@ router.post('/service-requests/:id/status', requireValidCsrf, async (req, res) =
   res.redirect(`/admin/service-requests/${id}`);
 });
 
-router.post('/service-requests/:id/message', requireValidCsrf, async (req, res) => {
-  const id = req.params.id;
-  const body = String(req.body.body || '').trim();
-  if (!body) return res.redirect(`/admin/service-requests/${id}`);
-  await pool.query(
-    `INSERT INTO service_request_messages (service_request_id, sender_type, admin_id, body)
-     VALUES ($1, 'admin', $2, $3)`,
-    [id, res.locals.currentAdmin.id, body]
-  );
-  res.redirect(`/admin/service-requests/${id}`);
-});
+router.post(
+  '/service-requests/:id/message',
+  upload.single('attachment'),
+  requireValidCsrf,
+  async (req, res) => {
+    const id = req.params.id;
+    const access = await assertServiceRequestAccess(req, res, id);
+    if (access.error === 'missing') return res.status(404).send('Not found');
+    if (access.error === 'forbidden') {
+      return forbidden403(req, res, 'Not assigned', 'This service request is not assigned to you.');
+    }
+    let body = String(req.body.body || '').trim();
+    const file = req.file;
+    if (!body && !file) return res.redirect(`/admin/service-requests/${id}`);
+    if (!body && file) body = 'Sent an attachment.';
+
+    let attachmentDocumentId = null;
+    if (file && file.buffer) {
+      const v = validateUploadedFile({
+        buffer: file.buffer,
+        reportedMime: file.mimetype,
+      });
+      if (!v.ok) return res.redirect(`/admin/service-requests/${id}?err=upload`);
+      const srRow = access.sr;
+      await ensureUploadRoot();
+      const memberDir = path.join(uploadDir, String(srRow.member_id));
+      await fs.mkdir(memberDir, { recursive: true });
+      const fname = `${crypto.randomUUID()}${path.extname(file.originalname || '') || '.bin'}`;
+      const storagePath = path.join(memberDir, fname);
+      await fs.writeFile(storagePath, file.buffer);
+      const ins = await pool.query(
+        `INSERT INTO member_documents (member_id, uploaded_by_type, uploaded_by_admin_id, original_name, storage_path, mime_type, size_bytes, category, service_request_id, is_admin_shared)
+         VALUES ($1, 'admin', $2, $3, $4, $5, $6, 'service_request_message', $7, true)
+         RETURNING id`,
+        [
+          srRow.member_id,
+          res.locals.currentAdmin.id,
+          file.originalname || 'file',
+          storagePath,
+          v.mime,
+          file.size,
+          id,
+        ]
+      );
+      attachmentDocumentId = ins.rows[0].id;
+    }
+
+    await pool.query(
+      `INSERT INTO service_request_messages (service_request_id, sender_type, admin_id, body, attachment_document_id)
+       VALUES ($1, 'admin', $2, $3, $4)`,
+      [id, res.locals.currentAdmin.id, body, attachmentDocumentId]
+    );
+
+    const { rows: memRows } = await pool.query(
+      `SELECT m.email, m.full_name, m.notify_email_service, sv.name AS service_name
+       FROM service_requests sr
+       JOIN members m ON m.id = sr.member_id
+       JOIN services sv ON sv.id = sr.service_id
+       WHERE sr.id = $1::uuid`,
+      [id]
+    );
+    const mem = memRows[0];
+    const base = process.env.BASE_URL || '';
+    if (mem) {
+      await notifyMember({
+        memberId: access.sr.member_id,
+        title: 'New message on your service request',
+        message: mem.service_name ? `${mem.service_name}: ${body.slice(0, 200)}` : body.slice(0, 200),
+        linkUrl: `/services/${id}`,
+      });
+      if (mem.email && mem.notify_email_service) {
+        try {
+          await sendServiceRequestAdminMessageEmail({
+            to: mem.email,
+            name: mem.full_name,
+            serviceName: mem.service_name || 'Your request',
+            messagePreview: body,
+            hasAttachment: Boolean(attachmentDocumentId),
+            portalUrl: base,
+            serviceRequestId: id,
+          });
+        } catch (e) {
+          console.error('service request admin message email', e.message);
+        }
+      }
+    }
+
+    res.redirect(`/admin/service-requests/${id}`);
+  }
+);
 
 router.post('/service-requests/:id/assign', requireValidCsrf, async (req, res) => {
+  if (res.locals.isConsultant) {
+    return forbidden403(req, res, 'Not available', 'Only managers or super admins can change assignment.');
+  }
   const aid = String(req.body.admin_id || '').trim() || null;
   await pool.query(
     `UPDATE service_requests SET assigned_admin_id = $2, updated_at = now() WHERE id = $1`,
@@ -1149,8 +1878,10 @@ router.post('/invoices/new', requireValidCsrf, async (req, res) => {
 
 router.get('/invoices/:id', async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT i.*, m.full_name, m.email FROM invoices i
-     JOIN members m ON m.id = i.member_id WHERE i.id = $1 AND i.deleted_at IS NULL`,
+    `SELECT i.*, m.full_name, m.email, m.phone AS member_phone
+     FROM invoices i
+     JOIN members m ON m.id = i.member_id
+     WHERE i.id = $1::uuid AND i.deleted_at IS NULL`,
     [req.params.id]
   );
   if (!rows[0]) return res.status(404).send('Not found');
@@ -1176,7 +1907,7 @@ router.get('/invoices/:id', async (req, res) => {
        FROM invoices i
        LEFT JOIN service_requests sr ON sr.id = i.service_request_id AND sr.deleted_at IS NULL
        LEFT JOIN service_plans sp ON sp.id = sr.service_plan_id AND sp.deleted_at IS NULL
-       WHERE i.id = $1`,
+       WHERE i.id = $1::uuid`,
       [req.params.id]
     );
     sched = schedRows[0] || {};
@@ -1189,10 +1920,13 @@ router.get('/invoices/:id', async (req, res) => {
     ['unpaid', 'sent', 'overdue', 'awaiting_confirmation'].includes(inv.status)
   );
   const { rows: invoiceLinks } = await pool.query(
-    `SELECT isl.*, sr.title AS sr_title, sv.name AS service_name
+    `SELECT isl.*, sr.title AS sr_title, sr.status AS sr_status,
+            sr.access_started_at, sr.access_ends_at, sr.detail_json,
+            sv.name AS service_name, sp.title AS plan_title
      FROM invoice_service_links isl
      JOIN service_requests sr ON sr.id = isl.service_request_id AND sr.deleted_at IS NULL
      JOIN services sv ON sv.id = sr.service_id
+     LEFT JOIN service_plans sp ON sp.id = sr.service_plan_id AND sp.deleted_at IS NULL
      WHERE isl.invoice_id = $1::uuid AND isl.deleted_at IS NULL
      ORDER BY isl.sort_order, isl.created_at`,
     [req.params.id]
@@ -1205,13 +1939,71 @@ router.get('/invoices/:id', async (req, res) => {
      LIMIT 1`,
     [req.params.id]
   );
+  const { rows: payments } = await pool.query(
+    `SELECT id, amount_cents, method, status, receipt_number, paystack_reference, created_at, updated_at
+     FROM payments
+     WHERE invoice_id = $1::uuid AND deleted_at IS NULL
+     ORDER BY created_at DESC`,
+    [req.params.id]
+  );
+  const { rows: cataloguePlans } = await pool.query(
+    `SELECT mp.id, mp.status, mp.started_at, mp.renewal_at,
+            mt.name AS tier_name, sp.title AS catalogue_plan_title
+     FROM member_plans mp
+     JOIN membership_tiers mt ON mt.id = mp.tier_id
+     LEFT JOIN service_plans sp ON sp.id = mt.service_plan_id AND sp.deleted_at IS NULL
+     WHERE mp.source_invoice_id = $1::uuid AND mp.deleted_at IS NULL
+     ORDER BY mp.created_at DESC`,
+    [req.params.id]
+  );
+  let primarySr = null;
+  if (inv.service_request_id) {
+    const { rows: psr } = await pool.query(
+      `SELECT sr.id, sr.title, sr.status, sr.access_started_at, sr.access_ends_at, sr.detail_json,
+              sv.name AS service_name, sp.title AS plan_title
+       FROM service_requests sr
+       JOIN services sv ON sv.id = sr.service_id
+       LEFT JOIN service_plans sp ON sp.id = sr.service_plan_id AND sp.deleted_at IS NULL
+       WHERE sr.id = $1::uuid AND sr.deleted_at IS NULL`,
+      [inv.service_request_id]
+    );
+    primarySr = psr[0] || null;
+  }
+  const subtotal =
+    items.rows.reduce((acc, it) => acc + (Number(it.amount_cents) || 0), 0) || Number(inv.subtotal_cents) || 0;
+
+  const linkIdSet = new Set(invoiceLinks.map((l) => String(l.service_request_id)));
+  let mergedInvoiceLinks = invoiceLinks;
+  if (primarySr && inv.service_request_id && !linkIdSet.has(String(inv.service_request_id))) {
+    mergedInvoiceLinks = [
+      {
+        service_request_id: primarySr.id,
+        sr_title: primarySr.title,
+        sr_status: primarySr.status,
+        access_started_at: primarySr.access_started_at,
+        access_ends_at: primarySr.access_ends_at,
+        detail_json: primarySr.detail_json,
+        service_name: primarySr.service_name,
+        plan_title: primarySr.plan_title,
+        amount_cents: null,
+        description: null,
+      },
+      ...invoiceLinks,
+    ];
+  }
+
   res.render('admin/invoice-detail', {
     layout: 'layouts/admin',
-    title: inv.invoice_number,
+    title: 'Invoice',
+    pageSub: `${inv.invoice_number} · ${inv.full_name || 'Member'}`,
     inv,
     items: items.rows,
-    invoiceLinks: invoiceLinks,
+    invoiceLinks: mergedInvoiceLinks,
     roomBooking: roomBookingRows[0] || null,
+    payments,
+    cataloguePlans,
+    primarySr,
+    computedSubtotalCents: subtotal,
     showAccessStartField,
     formatNgn,
     formatDate,
@@ -1317,6 +2109,16 @@ router.get('/documents/download/:id', async (req, res) => {
   );
   const d = rows[0];
   if (!d) return res.status(404).send('Not found');
+  if (res.locals.isConsultant) {
+    const { rows: chk } = await pool.query(
+      `SELECT 1 FROM service_requests sr
+       WHERE sr.id = $1::uuid AND sr.deleted_at IS NULL AND sr.assigned_admin_id = $2::uuid`,
+      [d.service_request_id, res.locals.currentAdmin.id]
+    );
+    if (!chk[0]) {
+      return forbidden403(req, res, 'Access denied', 'You can only download files for requests assigned to you.');
+    }
+  }
   const buf = await fs.readFile(d.storage_path);
   res.setHeader('Content-Type', d.mime_type);
   res.setHeader(
@@ -1326,7 +2128,7 @@ router.get('/documents/download/:id', async (req, res) => {
   res.send(buf);
 });
 
-router.post('/documents/:id/delete', requireValidCsrf, async (req, res) => {
+router.post('/documents/:id/delete', requireValidCsrf, requireSuperAdmin, async (req, res) => {
   await pool.query(
     `UPDATE member_documents SET deleted_at = now(), updated_at = now() WHERE id = $1`,
     [req.params.id]
@@ -1540,18 +2342,187 @@ router.post('/notifications/send', requireValidCsrf, async (req, res) => {
   res.redirect('/admin/notifications?msg=sent');
 });
 
-router.get('/settings', async (req, res) => {
-  const map = await getSettingsMap();
+/** Alias → dedicated super-admin users page */
+router.get('/admins', (req, res) => {
+  res.redirect(302, '/admin/users');
+});
+
+router.get('/users', requireSuperAdmin, async (req, res) => {
   const admins = await pool.query(
-    `SELECT id, username, email, active, must_change_password FROM portal_admin_users WHERE deleted_at IS NULL`
+    `SELECT id, username, email, active, must_change_password, role
+     FROM portal_admin_users WHERE deleted_at IS NULL ORDER BY username`
   );
-  res.render('admin/settings', {
+  res.render('admin/admin-users', {
     layout: 'layouts/admin',
-    title: 'Portal settings',
-    map,
+    title: 'Admin users',
+    pageSub: 'Super admins manage accounts and roles',
     admins: admins.rows,
     query: req.query,
   });
+});
+
+router.post('/users', requireValidCsrf, requireSuperAdmin, async (req, res) => {
+  const username = String(req.body.username || '').trim();
+  const email = String(req.body.email || '').trim();
+  const password = String(req.body.password || '');
+  const roleRaw = String(req.body.role || 'manager').trim();
+  const role = ['super_admin', 'manager', 'viewer', 'consultant'].includes(roleRaw) ? roleRaw : 'manager';
+  if (username && email && password.length >= 8) {
+    const hash = await bcrypt.hash(password, 10);
+    await pool.query(
+      `INSERT INTO portal_admin_users (username, email, password_hash, must_change_password, active, role)
+       VALUES ($1, $2, $3, false, true, $4)`,
+      [username, email, hash, role]
+    );
+  }
+  res.redirect('/admin/users?msg=created');
+});
+
+/** Super admin: set another admin's password (invalidates any pending email reset). */
+router.post('/users/:id/set-password', requireValidCsrf, requireSuperAdmin, async (req, res) => {
+  const id = String(req.params.id || '');
+  if (!isUuid(id)) {
+    return res.redirect('/admin/users?err=invalid_user');
+  }
+  const p1 = String(req.body.password || '');
+  const p2 = String(req.body.password2 || '');
+  const mustChange =
+    req.body.must_change_password === '1' ||
+    req.body.must_change_password === 'on' ||
+    req.body.must_change_password === true;
+  if (p1.length < 8 || p1 !== p2) {
+    return res.redirect('/admin/users?err=pw_mismatch');
+  }
+  const hash = await bcrypt.hash(p1, 10);
+  const { rowCount } = await pool.query(
+    `UPDATE portal_admin_users
+     SET password_hash = $2,
+         must_change_password = $3,
+         password_reset_token = NULL,
+         password_reset_expires = NULL,
+         updated_at = now()
+     WHERE id = $1::uuid AND deleted_at IS NULL`,
+    [id, hash, mustChange]
+  );
+  if (rowCount === 0) {
+    return res.redirect('/admin/users?err=not_found');
+  }
+  res.redirect('/admin/users?msg=pw_updated');
+});
+
+router.get('/settings', async (req, res) => {
+  const rawTab = String(req.query.tab || 'general');
+  const tab = rawTab === 'test-data' ? 'test-data' : 'general';
+  if (tab === 'test-data' && !res.locals.isSuperAdmin) {
+    return res.redirect('/admin/settings');
+  }
+
+  const map = await getSettingsMap();
+  let testMembers = [];
+  if (tab === 'test-data' && res.locals.isSuperAdmin) {
+    const { rows } = await pool.query(
+      `SELECT m.id, m.full_name, m.email, m.phone, m.created_at,
+        (SELECT COUNT(*)::int FROM invoices i WHERE i.member_id = m.id AND i.deleted_at IS NULL) AS invoice_count,
+        (SELECT COUNT(*)::int FROM service_requests sr WHERE sr.member_id = m.id AND sr.deleted_at IS NULL) AS sr_count,
+        (SELECT COUNT(*)::int FROM support_tickets t WHERE t.member_id = m.id AND t.deleted_at IS NULL) AS ticket_count
+       FROM members m
+       WHERE m.is_test_account = true AND m.deleted_at IS NULL
+       ORDER BY m.created_at DESC`,
+      []
+    );
+    testMembers = rows;
+  }
+
+  res.render('admin/settings', {
+    layout: 'layouts/admin',
+    title: 'Portal settings',
+    pageSub: tab === 'test-data' ? 'Test accounts and safe data purge (super admin)' : 'Bank, Paystack, and portal defaults',
+    map,
+    query: req.query,
+    settingsTab: tab,
+    testMembers,
+  });
+});
+
+router.post('/settings/test-account/create', requireValidCsrf, requireSuperAdmin, async (req, res) => {
+  const full_name = String(req.body.full_name || '').trim();
+  const email = String(req.body.email || '')
+    .trim()
+    .toLowerCase();
+  const phone = String(req.body.phone || '').trim();
+  const password = String(req.body.password || '');
+  if (!full_name || !email || !phone || password.length < 8) {
+    return res.redirect('/admin/settings?tab=test-data&err=test_fields');
+  }
+  const hash = await bcrypt.hash(password, 10);
+  try {
+    await pool.query(
+      `INSERT INTO members (
+         email, password_hash, full_name, phone, is_test_account, email_verified_at
+       ) VALUES ($1, $2, $3, $4, true, now())`,
+      [email, hash, full_name, phone]
+    );
+  } catch (e) {
+    if (e.code === '23505') {
+      return res.redirect('/admin/settings?tab=test-data&err=test_dup');
+    }
+    console.error('test account create', e);
+    return res.redirect('/admin/settings?tab=test-data&err=test_create');
+  }
+  res.redirect('/admin/settings?tab=test-data&msg=test_created');
+});
+
+router.post('/settings/test-account/flag', requireValidCsrf, requireSuperAdmin, async (req, res) => {
+  const memberId = String(req.body.member_id || '').trim();
+  const email = String(req.body.flag_email || '')
+    .trim()
+    .toLowerCase();
+  let id = memberId;
+  if (!id && email) {
+    const { rows } = await pool.query(
+      `SELECT id FROM members WHERE lower(trim(email)) = lower(trim($1)) AND deleted_at IS NULL LIMIT 1`,
+      [email]
+    );
+    id = rows[0]?.id;
+  }
+  if (!id) {
+    return res.redirect('/admin/settings?tab=test-data&err=test_flag_missing');
+  }
+  const { rowCount } = await pool.query(
+    `UPDATE members SET is_test_account = true, updated_at = now()
+     WHERE id = $1::uuid AND deleted_at IS NULL`,
+    [id]
+  );
+  if (!rowCount) {
+    return res.redirect('/admin/settings?tab=test-data&err=test_flag_missing');
+  }
+  res.redirect('/admin/settings?tab=test-data&msg=test_flagged');
+});
+
+router.post('/settings/test-purge', requireValidCsrf, requireSuperAdmin, async (req, res) => {
+  const raw = req.body.member_ids;
+  const ids = Array.isArray(raw) ? raw : raw ? [raw] : [];
+  if (!ids.length) {
+    return res.redirect('/admin/settings?tab=test-data&err=purge_none');
+  }
+  const client = await pool.connect();
+  let result;
+  try {
+    await client.query('BEGIN');
+    result = await purgeTestMembers(client, ids);
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('test purge', e);
+    client.release();
+    return res.redirect('/admin/settings?tab=test-data&err=purge_failed');
+  }
+  client.release();
+  const n = result.purged.length;
+  const sk = result.skipped.length;
+  res.redirect(
+    `/admin/settings?tab=test-data&msg=purged&n=${n}${sk ? `&skipped=${sk}` : ''}`
+  );
 });
 
 router.post('/settings', requireValidCsrf, async (req, res) => {
@@ -1576,19 +2547,8 @@ router.post('/settings', requireValidCsrf, async (req, res) => {
   res.redirect('/admin/settings?msg=1');
 });
 
-router.post('/settings/admins', requireValidCsrf, async (req, res) => {
-  const username = String(req.body.username || '').trim();
-  const email = String(req.body.email || '').trim();
-  const password = String(req.body.password || '');
-  if (username && email && password.length >= 8) {
-    const hash = await bcrypt.hash(password, 10);
-    await pool.query(
-      `INSERT INTO portal_admin_users (username, email, password_hash, must_change_password, active)
-       VALUES ($1, $2, $3, false, true)`,
-      [username, email, hash]
-    );
-  }
-  res.redirect('/admin/settings?msg=admin');
+router.post('/settings/admins', requireValidCsrf, requireSuperAdmin, (req, res) => {
+  res.redirect(302, '/admin/users');
 });
 
 module.exports = router;

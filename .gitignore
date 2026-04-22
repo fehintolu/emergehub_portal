@@ -7,3 +7,5 @@ uploads/
 dist/
 coverage/
 .tmp/
+# Local CSV imports may contain PII — keep out of git
+scripts/data/

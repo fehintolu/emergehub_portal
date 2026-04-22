@@ -1,0 +1,92 @@
+<% if (typeof query !== 'undefined' && query.msg === 'created') { %>
+  <div class="alert alert-success">User created.</div>
+<% } %>
+<% if (typeof query !== 'undefined' && query.msg === 'pw_updated') { %>
+  <div class="alert alert-success">Password updated.</div>
+<% } %>
+<% if (typeof query !== 'undefined' && query.err === 'pw_mismatch') { %>
+  <div class="alert alert-error">Passwords must match and be at least 8 characters.</div>
+<% } %>
+<% if (typeof query !== 'undefined' && query.err === 'invalid_user') { %>
+  <div class="alert alert-error">Invalid user.</div>
+<% } %>
+<% if (typeof query !== 'undefined' && query.err === 'not_found') { %>
+  <div class="alert alert-error">User not found.</div>
+<% } %>
+<div class="card anim anim-2" style="margin-bottom:20px;">
+  <p class="page-lead" style="margin:0;">Super admins can create any role, including other super admins. Managers cannot archive data or manage users. Viewers are read-only. Consultants only see service requests assigned to them.</p>
+</div>
+
+<div class="table-wrap anim anim-2">
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Username</th>
+        <th>Email</th>
+        <th>Role</th>
+        <th>Status</th>
+        <th>Set password</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% admins.forEach(function (a) { %>
+        <tr>
+          <td><strong><%= a.username %></strong></td>
+          <td><%= a.email %></td>
+          <td><%= a.role || 'super_admin' %></td>
+          <td><%= a.active ? 'active' : 'off' %><% if (a.must_change_password) { %> · must change password<% } %></td>
+          <td style="min-width:220px;vertical-align:top;">
+            <details>
+              <summary style="cursor:pointer;">Change…</summary>
+              <form method="post" action="/admin/users/<%= a.id %>/set-password" style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(0,0,0,0.08);">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                <div class="form-row" style="margin-bottom:8px;">
+                  <label style="font-size:0.85rem;">New password</label>
+                  <input name="password" type="password" minlength="8" required autocomplete="new-password" style="width:100%;box-sizing:border-box;" />
+                </div>
+                <div class="form-row" style="margin-bottom:8px;">
+                  <label style="font-size:0.85rem;">Confirm</label>
+                  <input name="password2" type="password" minlength="8" required autocomplete="new-password" style="width:100%;box-sizing:border-box;" />
+                </div>
+                <label style="display:flex;align-items:center;gap:8px;font-size:0.85rem;margin-bottom:8px;">
+                  <input type="checkbox" name="must_change_password" value="1" />
+                  Require change on next login
+                </label>
+                <button type="submit" class="btn btn-primary" style="font-size:0.9rem;">Set password</button>
+              </form>
+            </details>
+          </td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>
+
+<div class="card anim anim-3" style="max-width:520px;">
+  <h3 style="margin-top:0;">Add admin user</h3>
+  <form method="post" action="/admin/users">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+    <div class="form-row">
+      <label>Username</label>
+      <input name="username" required autocomplete="off" />
+    </div>
+    <div class="form-row">
+      <label>Email</label>
+      <input name="email" type="email" required autocomplete="off" />
+    </div>
+    <div class="form-row">
+      <label>Password (min 8)</label>
+      <input name="password" type="password" minlength="8" required autocomplete="new-password" />
+    </div>
+    <div class="form-row">
+      <label>Role</label>
+      <select name="role">
+        <option value="manager">Manager — all actions except archive / destructive deletes</option>
+        <option value="viewer">Viewer — read-only</option>
+        <option value="consultant">Consultant — assigned service requests only</option>
+        <option value="super_admin">Super admin — full access</option>
+      </select>
+    </div>
+    <p><button type="submit" class="btn btn-primary">Create user</button></p>
+  </form>
+</div>

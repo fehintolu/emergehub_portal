@@ -67,15 +67,116 @@
 <% if (query && query.msg === 'not_full') { %>
   <div class="alert alert-success ws-flash">That plan still has capacity — use Book &amp; invoice when you are ready.</div>
 <% } %>
+<% if (query && query.msg === 'activated') { %>
+  <div class="alert alert-success ws-flash">Your workspace plan is now active. Access and allowances start from now (hub time).</div>
+<% } %>
+<% if (query && query.err === 'activate') { %>
+  <div class="alert alert-error ws-flash">That plan could not be activated. If payment is still processing, try again shortly or contact support.</div>
+<% } %>
 <% if (typeof waitlistClaimBanner !== 'undefined' && waitlistClaimBanner) { %>
   <div class="alert alert-success ws-flash">Your waitlist spot is ready for <strong><%= waitlistClaimBanner.planTitle %></strong>. Scroll to <strong>Core workspace access</strong> and use <em>Book &amp; invoice</em> for that plan, then pay within 48 hours if an invoice is created.</div>
 <% } %>
   </div>
 <% } %>
 
-<% if (typeof meetingCredits !== 'undefined' && meetingCredits && (meetingCredits.granted > 0 || meetingCredits.available > 0)) { %>
+<% if (typeof pendingWorkspacePlans !== 'undefined' && pendingWorkspacePlans && pendingWorkspacePlans.length) { %>
+  <section class="ws-pending-plans" aria-labelledby="ws-pending-heading" style="margin-bottom:1.5rem;">
+    <h2 id="ws-pending-heading" class="ws-am-title" style="font-size:1.15rem;margin-bottom:0.5rem;">Paid plans — activate when you are ready</h2>
+    <p class="ws-am-desc" style="margin-bottom:1rem;">These invoices are paid. Start your membership now (from the current date and time). To schedule a future start date, ask an admin.</p>
+    <div class="ws-pending-list">
+      <% pendingWorkspacePlans.forEach(function (pp) { %>
+        <div class="ws-pending-card" style="border:1px solid var(--border-subtle, #e2e8f0);border-radius:10px;padding:14px 16px;margin-bottom:10px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;">
+          <div>
+            <strong><%= pp.name || 'Workspace plan' %></strong>
+            <% if (pp.catalogue_plan_title) { %> — <%= pp.catalogue_plan_title %><% } %>
+            <% if (pp.source_invoice_number) { %>
+              <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Invoice <%= pp.source_invoice_number %></div>
+            <% } %>
+          </div>
+          <form method="post" action="/workspace/activate-plan" style="margin:0;">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <input type="hidden" name="member_plan_id" value="<%= pp.id %>" />
+            <button type="submit" class="btn btn-primary">Activate now</button>
+          </form>
+        </div>
+      <% }); %>
+    </div>
+  </section>
+<% } %>
+
+<% if (plan) { %>
+  <% var _mcGrant = typeof meetingCredits !== 'undefined' && meetingCredits ? Number(meetingCredits.granted) || 0 : 0; %>
+  <% var _mcAvail = typeof meetingCredits !== 'undefined' && meetingCredits ? Number(meetingCredits.available) || 0 : 0; %>
+  <% var _mcUsed = typeof meetingCredits !== 'undefined' && meetingCredits ? Number(meetingCredits.used) || 0 : 0; %>
+  <% var _mcPct = _mcGrant > 0 ? Math.min(100, Math.round((_mcUsed / _mcGrant) * 100)) : 0; %>
+  <% var _wk = plan.catalogue_weekly_sessions; %>
+  <section class="ws-active-membership" aria-labelledby="ws-am-heading">
+    <div class="ws-am-inner">
+      <div class="ws-am-head">
+        <p class="ws-am-kicker" id="ws-am-heading">Your membership</p>
+        <h2 class="ws-am-title"><%= plan.name %></h2>
+        <span class="ws-am-badge"><%= String(plan.status || '').replace(/_/g, ' ') %></span>
+      </div>
+      <% if (plan.description) { %>
+        <p class="ws-am-desc"><%= plan.description %></p>
+      <% } %>
+      <div class="ws-am-meta">
+        <div class="ws-am-meta-item">
+          <span class="ws-am-meta-label">Renewal</span>
+          <span class="ws-am-meta-value"><%= plan.renewal_at ? formatDate(plan.renewal_at) : '—' %></span>
+        </div>
+        <div class="ws-am-meta-item">
+          <span class="ws-am-meta-label">Started</span>
+          <span class="ws-am-meta-value"><%= plan.started_at ? formatDate(plan.started_at) : '—' %></span>
+        </div>
+        <% if (plan.price_display || plan.hours) { %>
+        <div class="ws-am-meta-item ws-am-meta-item--wide">
+          <span class="ws-am-meta-label">Plan details</span>
+          <span class="ws-am-meta-value"><%= plan.price_display || '' %><% if (plan.hours) { %> · <%= plan.hours %><% } %></span>
+        </div>
+        <% } %>
+      </div>
+      <div class="ws-am-benefits">
+        <% if (_mcGrant > 0) { %>
+          <div class="ws-am-benefit">
+            <div class="ws-am-benefit-icon" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+            </div>
+            <div class="ws-am-benefit-body">
+              <div class="ws-am-benefit-title">Meeting room credits</div>
+              <p class="ws-am-benefit-text"><strong><%= _mcAvail %></strong> minutes left this month of <strong><%= _mcGrant %></strong> (<%= _mcUsed %> used). Applied automatically on eligible hub bookings.</p>
+              <div class="ws-am-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<%= _mcPct %>">
+                <div class="ws-am-progress-fill" style="width:<%= _mcPct %>%"></div>
+              </div>
+            </div>
+          </div>
+        <% } %>
+        <% if (_wk != null && Number(_wk) > 0) { %>
+          <div class="ws-am-benefit ws-am-benefit--compact">
+            <div class="ws-am-benefit-icon" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/><circle cx="12" cy="12" r="3"/></svg>
+            </div>
+            <div>
+              <div class="ws-am-benefit-title">Weekly access sessions</div>
+              <p class="ws-am-benefit-text"><strong><%= _wk %></strong> sessions per week included with your tier.</p>
+            </div>
+          </div>
+        <% } %>
+        <% if (plan.catalogue_plan_title && String(plan.catalogue_plan_title).trim()) { %>
+          <p class="ws-am-linked-plan">Linked catalogue plan: <strong><%= plan.catalogue_plan_title %></strong></p>
+        <% } %>
+      </div>
+      <div class="ws-am-actions">
+        <a href="/meeting-rooms" class="ws-am-cta">Book a meeting room</a>
+        <% if (plan.desk_or_office) { %>
+          <span class="ws-am-assignment">Desk / unit: <strong><%= plan.desk_or_office %></strong></span>
+        <% } %>
+      </div>
+    </div>
+  </section>
+<% } else if (typeof meetingCredits !== 'undefined' && meetingCredits && (meetingCredits.granted > 0 || meetingCredits.available > 0)) { %>
   <div class="ws-strip ws-strip--credits">
-    <p><strong>Meeting room credits</strong> — this month you have <strong><%= meetingCredits.available %></strong> of <strong><%= meetingCredits.granted %></strong> plan minutes remaining (<%= meetingCredits.used %> used). Credits apply automatically when you book eligible hub rooms.</p>
+    <p><strong>Meeting room credits</strong> — you have <strong><%= meetingCredits.available %></strong> of <strong><%= meetingCredits.granted %></strong> plan minutes remaining (<%= meetingCredits.used %> used)<% if (meetingCredits.pool_expires_on) { %>, valid through <strong><%= formatDate(meetingCredits.pool_expires_on) %></strong><% } %>. Credits apply automatically when you book eligible hub rooms.</p>
     <a href="/meeting-rooms" class="ws-strip-link">Book a meeting room →</a>
   </div>
 <% } %>
@@ -221,15 +322,6 @@
 <% } %>
 
 <% if (plan) { %>
-  <div class="ws-panel">
-    <h3 class="ws-panel-title">Current plan</h3>
-    <p class="ws-panel-line"><strong><%= plan.name %></strong> <span class="ws-inline-badge"><%= plan.status %></span></p>
-    <p class="ws-panel-desc"><%= plan.description %></p>
-    <p class="ws-panel-line"><strong>Price:</strong> <%= plan.price_display %> · <%= plan.hours %></p>
-    <p class="ws-panel-line"><strong>Started:</strong> <%= formatDate(plan.started_at) %> · <strong>Renewal:</strong> <%= plan.renewal_at ? formatDate(plan.renewal_at) : '—' %></p>
-    <% if (plan.desk_or_office) { %><p class="ws-panel-line"><strong>Assignment:</strong> <%= plan.desk_or_office %></p><% } %>
-  </div>
-
   <div class="ws-two-col">
     <div class="ws-panel">
       <h3 class="ws-panel-title">Upcoming room bookings</h3>

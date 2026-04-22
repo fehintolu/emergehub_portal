@@ -9,6 +9,9 @@
 <div class="card anim anim-2" style="max-width:640px;">
   <form method="post" action="<%= mode === 'new' ? '/admin/catalog/new' : '/admin/catalog/' + svc.id + '/edit' %>">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+    <% if (typeof canMutate === 'undefined' || !canMutate) { %>
+      <div class="alert alert-error" style="margin-bottom:16px;">View-only — you cannot edit this service.</div>
+    <% } %>
     <div class="form-row">
       <label>Category</label>
       <select name="category_id" required>
@@ -51,7 +54,9 @@
       <input type="number" name="sort_order" min="0" step="1" value="<%= mode === 'edit' && svc ? svc.sort_order : 0 %>" />
     </div>
     <p style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;">
-      <button type="submit" class="btn btn-primary"><%= mode === 'new' ? 'Create service' : 'Save changes' %></button>
+      <% if (typeof canMutate !== 'undefined' && canMutate) { %>
+        <button type="submit" class="btn btn-primary"><%= mode === 'new' ? 'Create service' : 'Save changes' %></button>
+      <% } %>
       <% if (mode === 'edit' && svc) { %>
         <a class="btn btn-secondary" href="/admin/catalog/<%= svc.id %>/plans">Manage plans</a>
       <% } %>
@@ -59,3 +64,14 @@
     </p>
   </form>
 </div>
+
+<% if (mode === 'edit' && svc && typeof canArchive !== 'undefined' && canArchive) { %>
+<div class="card anim anim-3" style="max-width:640px;border-color:rgba(224,52,30,0.35);background:var(--red-light);">
+  <h3 style="margin-top:0;color:var(--red);font-size:15px;">Archive service</h3>
+  <p class="page-lead" style="margin-bottom:12px;">Removes this service from the member catalogue. Plans stay in the database; archive plans separately if needed. You can restore under Archived services.</p>
+  <form method="post" action="/admin/catalog/<%= svc.id %>/archive" onsubmit="return confirm('Archive this workspace service?');">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+    <button type="submit" class="btn btn-secondary" style="border-color:rgba(224,52,30,0.45);color:var(--red);">Archive service</button>
+  </form>
+</div>
+<% } %>

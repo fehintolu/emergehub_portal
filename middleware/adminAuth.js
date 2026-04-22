@@ -6,7 +6,7 @@ async function loadAdmin(req, res, next) {
     return next();
   }
   const { rows } = await pool.query(
-    `SELECT id, username, email, must_change_password, active
+    `SELECT id, username, email, must_change_password, active, role
      FROM portal_admin_users WHERE id = $1 AND deleted_at IS NULL`,
     [req.session.adminId]
   );

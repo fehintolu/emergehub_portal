@@ -30,7 +30,7 @@
   <p class="page-lead">Paste a member UUID from <a href="/admin/members">Members</a>. Optional invoice uses the same pricing engine as the member portal.</p>
   <form method="post" action="/admin/meeting-rooms/bookings/manual">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-    <div class="form-row"><label>Member ID</label><input name="member_id" required placeholder="uuid" style="max-width:420px;" /></div>
+    <div class="form-row"><label>Member ID</label><input name="member_id" required placeholder="uuid" style="max-width:420px;" value="<%= typeof prefillMemberId !== 'undefined' && prefillMemberId ? prefillMemberId : '' %>" /></div>
     <div class="form-row">
       <label>Room</label>
       <select name="room_id" required>

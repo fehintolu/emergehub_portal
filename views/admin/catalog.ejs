@@ -4,6 +4,8 @@
   <div class="alert alert-success anim anim-2">Service created.</div>
 <% } else if (msg === 'updated') { %>
   <div class="alert alert-success anim anim-2">Service updated.</div>
+<% } else if (msg === 'restored') { %>
+  <div class="alert alert-success anim anim-2">Service restored to the catalogue.</div>
 <% } %>
 <% if (err === 'slug') { %>
   <div class="alert alert-error anim anim-2">Could not save — slug may already exist for that category.</div>
@@ -12,12 +14,19 @@
 <div class="card anim anim-2" style="margin-bottom:20px;">
   <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;">
     <p class="page-lead" style="margin:0;">Set sort order (lower numbers appear first within each category), then save.</p>
-    <a class="btn btn-primary" href="/admin/catalog/new">Add service</a>
+    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+      <a class="btn btn-secondary" href="/admin/catalog/archived">Archived services</a>
+      <% if (typeof canMutate !== 'undefined' && canMutate) { %>
+        <a class="btn btn-primary" href="/admin/catalog/new">Add service</a>
+      <% } %>
+    </div>
   </div>
 </div>
 
 <form method="post" action="/admin/catalog/sort" class="anim anim-3">
+  <% if (typeof canMutate !== 'undefined' && canMutate) { %>
   <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+  <% } %>
   <div class="table-wrap">
     <table class="data">
       <thead>
@@ -41,10 +50,18 @@
             </td>
             <td><%= s.booking_mode === 'plan_booking' ? 'Bookable' : 'Request' %></td>
             <td><%= formatNgn(s.portal_price_cents || 0) %></td>
-            <td><input type="number" min="0" step="1" name="sort_<%= s.id %>" value="<%= s.sort_order %>" style="width:100%;max-width:96px;padding:8px;border:1px solid var(--border);border-radius:8px;" /></td>
             <td>
-              <a href="/admin/catalog/<%= s.id %>/edit" class="section-link">Edit</a>
-              · <a href="/admin/catalog/<%= s.id %>/plans" class="section-link">Plans</a>
+              <% if (typeof canMutate !== 'undefined' && canMutate) { %>
+                <input type="number" min="0" step="1" name="sort_<%= s.id %>" value="<%= s.sort_order %>" style="width:100%;max-width:96px;padding:8px;border:1px solid var(--border);border-radius:8px;" />
+              <% } else { %>
+                <%= s.sort_order %>
+              <% } %>
+            </td>
+            <td>
+              <a href="/admin/catalog/<%= s.id %>/plans" class="section-link">Plans</a>
+              <% if (typeof canMutate !== 'undefined' && canMutate) { %>
+                · <a href="/admin/catalog/<%= s.id %>/edit" class="section-link">Edit</a>
+              <% } %>
             </td>
           </tr>
         <% }); %>
@@ -53,7 +70,7 @@
   </div>
   <% if (!services.length) { %>
     <p class="page-lead" style="padding:16px 0;">No services yet. Add one to show it in the member portal.</p>
-  <% } else { %>
+  <% } else if (typeof canMutate !== 'undefined' && canMutate) { %>
     <p style="margin-top:16px;"><button type="submit" class="btn btn-secondary">Save sort order</button></p>
   <% } %>
 </form>

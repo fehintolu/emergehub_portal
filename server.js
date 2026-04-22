@@ -32,13 +32,18 @@ function assetMtimeMs(relativePath) {
   }
 }
 
-/** Bust browser/CDN caches when CSS changes (query string + weak validators). */
-app.locals.memberPortalCssV = String(
-  process.env.PORTAL_ASSET_VERSION || assetMtimeMs('public/css/member-portal.css')
-);
-app.locals.adminUiCssV = String(
-  process.env.PORTAL_ASSET_VERSION || assetMtimeMs('public/css/admin-ui.css')
-);
+/**
+ * Bust browser/CDN caches when CSS changes (query string).
+ * If PORTAL_ASSET_VERSION is set, it is prefixed so deploy epochs still work, but the
+ * file mtime is always included — a fixed env alone no longer pins ?v= forever.
+ */
+function cssCacheQuery(relativePath) {
+  const m = String(Math.floor(assetMtimeMs(relativePath)));
+  const p = process.env.PORTAL_ASSET_VERSION && String(process.env.PORTAL_ASSET_VERSION).trim();
+  return p ? `${p}-${m}` : m;
+}
+app.locals.memberPortalCssV = cssCacheQuery('public/css/member-portal.css');
+app.locals.adminUiCssV = cssCacheQuery('public/css/admin-ui.css');
 
 app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'ejs');
@@ -122,6 +127,13 @@ app.use((req, res, next) => {
 
 app.use(csrfMiddleware);
 
+/** Admin HTML was being served as 304 in browsers after deploy; force revalidation. */
+app.use('/admin', (req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  res.set('Pragma', 'no-cache');
+  next();
+});
+
 app.get('/health', (req, res) => {
   res.json({ ok: true, app: 'emergehub-portal' });
 });
@@ -140,6 +152,10 @@ app.use('/admin', adminLogin);
 app.use('/admin', adminMeetingRooms);
 app.use('/admin', adminCapacity);
 app.use('/admin', adminMain);
+/* Unmatched /admin/* must not fall through to memberArea (would run requireMember → /auth/login). */
+app.use('/admin', (req, res) => {
+  res.status(404).send('Not found');
+});
 
 app.use(memberArea);
 

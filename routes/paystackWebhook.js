@@ -76,7 +76,8 @@ router.post(
         `UPDATE invoices SET status = 'paid', updated_at = now() WHERE id = $1`,
         [pRow.invoice_id]
       );
-      await onInvoicePaid(client, pRow.invoice_id, null);
+      /* Online card payment: no admin access-start field — begin membership immediately. */
+      await onInvoicePaid(client, pRow.invoice_id, new Date());
       await notifyMember(
         {
           memberId: pRow.member_id,

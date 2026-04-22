@@ -29,6 +29,9 @@ const {
   createServiceRequestInvoiceInTx,
   sendServiceRequestInvoiceNotifications,
 } = require('../lib/serviceRequestInvoice');
+const { notifyStaffCustomerServiceRequestActivity } = require('../lib/serviceRequestStaffEmail');
+const { activatePendingWorkspaceMemberPlan } = require('../lib/workspacePlanActivation');
+const { markdownDocToHtml } = require('../lib/knowledgeBase');
 
 const router = express.Router();
 
@@ -60,6 +63,44 @@ const upload = multer({
 async function ensureUploadRoot() {
   await fs.mkdir(uploadDir, { recursive: true });
 }
+
+router.get('/help', async (req, res) => {
+  const m = res.locals.currentMember;
+  try {
+    const contentHtml = await markdownDocToHtml('MEMBER_USER_GUIDE.md');
+    const notifCount = await unreadCount(m.id);
+    res.render('member/knowledge-base', {
+      layout: 'layouts/member',
+      title: 'Knowledge base',
+      pageSub: 'How-to guides for the member portal',
+      contentHtml,
+      kbMode: 'main',
+      notifCount,
+    });
+  } catch (e) {
+    console.error('[member] knowledge base', e);
+    res.status(500).send('Could not load the knowledge base.');
+  }
+});
+
+router.get('/help/screenshots', async (req, res) => {
+  const m = res.locals.currentMember;
+  try {
+    const contentHtml = await markdownDocToHtml('USER_GUIDE_SCREENSHOTS.md');
+    const notifCount = await unreadCount(m.id);
+    res.render('member/knowledge-base', {
+      layout: 'layouts/member',
+      title: 'Screenshot checklist',
+      pageSub: 'Documentation image list (member & admin)',
+      contentHtml,
+      kbMode: 'screenshots',
+      notifCount,
+    });
+  } catch (e) {
+    console.error('[member] screenshot doc', e);
+    res.status(500).send('Could not load this page.');
+  }
+});
 
 function isUuidMember(s) {
   return (
@@ -177,6 +218,7 @@ router.get('/dashboard', async (req, res) => {
     announcements: announcements.rows,
     filterMonthStart: fmtShort(monthStart),
     filterMonthEnd: fmtShort(monthEnd),
+    formatDate,
     formatDateTime,
     formatNgn,
   });
@@ -185,11 +227,27 @@ router.get('/dashboard', async (req, res) => {
 router.get('/workspace', async (req, res) => {
   const m = res.locals.currentMember;
   const plan = await pool.query(
-    `SELECT mp.*, mt.name, mt.description, mt.price_display, mt.hours
+    `SELECT mp.*, mt.name, mt.description, mt.price_display, mt.hours,
+            sp.monthly_meeting_credit_minutes AS catalogue_meeting_credits_min,
+            sp.weekly_access_sessions AS catalogue_weekly_sessions,
+            sp.title AS catalogue_plan_title
      FROM member_plans mp
      JOIN membership_tiers mt ON mt.id = mp.tier_id
+     LEFT JOIN service_plans sp ON sp.id = mt.service_plan_id AND sp.deleted_at IS NULL
      WHERE mp.member_id = $1 AND mp.deleted_at IS NULL AND mp.status = 'active'
-     ORDER BY mp.started_at DESC LIMIT 1`,
+     ORDER BY mp.started_at DESC NULLS LAST LIMIT 1`,
+    [m.id]
+  );
+  const pendingWorkspacePlans = await pool.query(
+    `SELECT mp.*, mt.name, mt.description, mt.price_display, mt.hours,
+            sp.title AS catalogue_plan_title,
+            inv.invoice_number AS source_invoice_number
+     FROM member_plans mp
+     JOIN membership_tiers mt ON mt.id = mp.tier_id
+     LEFT JOIN service_plans sp ON sp.id = mt.service_plan_id AND sp.deleted_at IS NULL
+     LEFT JOIN invoices inv ON inv.id = mp.source_invoice_id AND inv.deleted_at IS NULL
+     WHERE mp.member_id = $1 AND mp.deleted_at IS NULL AND mp.status = 'pending_activation'
+     ORDER BY mp.created_at DESC`,
     [m.id]
   );
   let tiers = { rows: [] };
@@ -219,7 +277,7 @@ router.get('/workspace', async (req, res) => {
     `SELECT s.*, c.name AS category_name
      FROM services s
      JOIN service_categories c ON c.id = s.category_id
-     WHERE s.portal_active = true AND s.booking_mode = 'plan_booking'
+     WHERE s.deleted_at IS NULL AND s.portal_active = true AND s.booking_mode = 'plan_booking'
      ORDER BY c.sort_order, s.sort_order, s.id`
   );
   const svcIds = bookableSvcs.rows.map((r) => r.id);
@@ -306,6 +364,7 @@ router.get('/workspace', async (req, res) => {
     layout: 'layouts/member',
     title: 'My Workspace',
     plan: plan.rows[0] || null,
+    pendingWorkspacePlans: pendingWorkspacePlans.rows,
     tiers: tiers.rows,
     roomNames,
     bookingsUp: bookingsUp.rows,
@@ -322,6 +381,31 @@ router.get('/workspace', async (req, res) => {
     notifCount,
     query: req.query,
   });
+});
+
+router.post('/workspace/activate-plan', requireValidCsrf, async (req, res) => {
+  const m = res.locals.currentMember;
+  const memberPlanId = String(req.body.member_plan_id || '').trim();
+  if (!isUuidMember(memberPlanId)) return res.redirect('/workspace?err=activate');
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await activatePendingWorkspaceMemberPlan(client, {
+      memberPlanId,
+      memberId: m.id,
+      accessStartsAt: null,
+      fromMemberPortal: true,
+    });
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('workspace activate-plan', e);
+    return res.redirect('/workspace?err=activate');
+  } finally {
+    client.release();
+  }
+  return res.redirect('/workspace?msg=activated');
 });
 
 router.post('/workspace/waitlist', requireValidCsrf, async (req, res) => {
@@ -413,7 +497,7 @@ router.post('/workspace/book-service', requireValidCsrf, async (req, res) => {
   }
   const { rows: chk } = await pool.query(
     `SELECT s.id, s.name, s.booking_mode, s.portal_active
-     FROM services s WHERE s.id = $1`,
+     FROM services s WHERE s.id = $1 AND s.deleted_at IS NULL`,
     [serviceId]
   );
   if (!chk[0] || !chk[0].portal_active || chk[0].booking_mode !== 'plan_booking') {
@@ -534,7 +618,7 @@ router.get('/services', async (req, res) => {
     `SELECT s.*, c.name AS category_name, c.slug AS category_slug
      FROM services s
      JOIN service_categories c ON c.id = s.category_id
-     WHERE s.portal_active = true
+     WHERE s.deleted_at IS NULL AND s.portal_active = true
      ORDER BY c.sort_order, s.sort_order`
   );
   const mine = await pool.query(
@@ -566,7 +650,7 @@ router.get('/services/request/:serviceId', async (req, res) => {
   const { rows } = await pool.query(
     `SELECT s.*, c.name AS category_name FROM services s
      JOIN service_categories c ON c.id = s.category_id
-     WHERE s.id = $1 AND s.portal_active = true`,
+     WHERE s.id = $1 AND s.deleted_at IS NULL AND s.portal_active = true`,
     [sid]
   );
   if (!rows[0]) return res.status(404).send('Not found');
@@ -606,7 +690,7 @@ router.post(
       `SELECT name, COALESCE(portal_price_cents, 0)::bigint AS portal_price_cents,
         COALESCE(portal_active, true) AS portal_active,
         COALESCE(booking_mode, 'request') AS booking_mode
-       FROM services WHERE id = $1`,
+       FROM services WHERE id = $1 AND deleted_at IS NULL`,
       [sid]
     );
     if (!sv[0] || !sv[0].portal_active || sv[0].booking_mode === 'plan_booking') {
@@ -788,9 +872,11 @@ router.get('/services/:id', async (req, res) => {
     [id]
   );
   const msgs = await pool.query(
-    `SELECT * FROM service_request_messages
-     WHERE service_request_id = $1 AND deleted_at IS NULL
-     ORDER BY created_at ASC`,
+    `SELECT srm.*, md.original_name AS attachment_name
+     FROM service_request_messages srm
+     LEFT JOIN member_documents md ON md.id = srm.attachment_document_id
+     WHERE srm.service_request_id = $1 AND srm.deleted_at IS NULL
+     ORDER BY srm.created_at ASC`,
     [id]
   );
   const docs = await pool.query(
@@ -848,6 +934,27 @@ router.post('/services/:id/message', requireValidCsrf, async (req, res) => {
      VALUES ($1, 'member', $2, $3)`,
     [id, m.id, body]
   );
+  try {
+    const { rows: srInfo } = await pool.query(
+      `SELECT sr.assigned_admin_id, sv.name AS service_name
+       FROM service_requests sr
+       JOIN services sv ON sv.id = sr.service_id
+       WHERE sr.id = $1::uuid AND sr.member_id = $2 AND sr.deleted_at IS NULL`,
+      [id, m.id]
+    );
+    if (srInfo[0]) {
+      await notifyStaffCustomerServiceRequestActivity(pool, {
+        serviceRequestId: id,
+        serviceName: srInfo[0].service_name,
+        memberName: m.full_name,
+        memberEmail: m.email,
+        summaryLine: 'The customer sent a new message on this service request.',
+        assignedAdminId: srInfo[0].assigned_admin_id,
+      });
+    }
+  } catch (e) {
+    console.error('service request staff notify', e.message);
+  }
   res.redirect(`/services/${id}`);
 });
 
@@ -1429,11 +1536,13 @@ router.get('/settings/:tab', async (req, res) => {
   res.render('member/settings', {
     layout: 'layouts/member',
     title: 'Settings',
+    pageSub: 'Account, business, notifications, and security',
     tab,
     sessions: sessions.rows,
     formatDateTime,
     notifCount: await unreadCount(m.id),
     currentMember: m,
+    query: req.query,
   });
 });
 
@@ -1445,14 +1554,40 @@ router.post('/settings/profile', requireValidCsrf, upload.single('photo'), async
     .trim()
     .toLowerCase();
   const emailChanged = email !== m.email;
+
+  const opt = (name) => String(req.body[name] || '').trim() || null;
+  const salutation = opt('salutation');
+  const first_name = opt('first_name');
+  const last_name = opt('last_name');
+  const contact_name = opt('contact_name');
+  const contact_type = opt('contact_type');
+  const billing_state = opt('billing_state');
+  const billing_country = opt('billing_country');
+  const mobile_phone = opt('mobile_phone');
+  const crm_product = opt('crm_product');
+
+  const profileExtras = [
+    salutation,
+    first_name,
+    last_name,
+    contact_name,
+    contact_type,
+    billing_state,
+    billing_country,
+    mobile_phone,
+    crm_product,
+  ];
+
   if (emailChanged) {
     const token = crypto.randomBytes(32).toString('hex');
     const expires = new Date(Date.now() + 48 * 3600 * 1000);
     await pool.query(
       `UPDATE members SET full_name = $2, phone = $3, email = $4,
-       email_verified_at = NULL, email_verification_token = $5, email_verification_expires = $6, updated_at = now()
+       salutation = $5, first_name = $6, last_name = $7, contact_name = $8, contact_type = $9,
+       billing_state = $10, billing_country = $11, mobile_phone = $12, crm_product = $13,
+       email_verified_at = NULL, email_verification_token = $14, email_verification_expires = $15, updated_at = now()
        WHERE id = $1`,
-      [m.id, full_name, phone, email, token, expires]
+      [m.id, full_name, phone, email, ...profileExtras, token, expires]
     );
     const { sendVerificationEmail } = require('../lib/mail');
     const base = process.env.BASE_URL || '';
@@ -1463,8 +1598,11 @@ router.post('/settings/profile', requireValidCsrf, upload.single('photo'), async
     });
   } else {
     await pool.query(
-      `UPDATE members SET full_name = $2, phone = $3, updated_at = now() WHERE id = $1`,
-      [m.id, full_name, phone]
+      `UPDATE members SET full_name = $2, phone = $3,
+       salutation = $4, first_name = $5, last_name = $6, contact_name = $7, contact_type = $8,
+       billing_state = $9, billing_country = $10, mobile_phone = $11, crm_product = $12,
+       updated_at = now() WHERE id = $1`,
+      [m.id, full_name, phone, ...profileExtras]
     );
   }
   if (req.file && req.file.buffer) {

@@ -53,7 +53,7 @@
 
     <button type="submit" class="btn btn-primary" style="margin-top:16px;">Save</button>
   </form>
-  <% if (room) { %>
+  <% if (room && typeof canArchive !== 'undefined' && canArchive) { %>
     <form method="post" action="/admin/meeting-rooms/rooms/<%= room.id %>/delete" style="margin-top:12px;" onsubmit="return confirm('Archive this room?');">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
       <button type="submit" class="btn btn-ghost">Archive room</button>
@@ -78,10 +78,12 @@
           <li>
             <%= formatDateTime(b.starts_at) %> → <%= formatDateTime(b.ends_at) %>
             <% if (b.reason) { %> — <%= b.reason %><% } %>
+            <% if (typeof canArchive !== 'undefined' && canArchive) { %>
             <form method="post" action="/admin/meeting-rooms/blocks/<%= b.id %>/delete" style="display:inline;margin-left:8px;" onsubmit="return confirm('Remove this block?');">
               <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
               <button type="submit" class="btn" style="padding:2px 8px;font-size:12px;">Remove</button>
             </form>
+            <% } %>
           </li>
         <% }); %>
       </ul>

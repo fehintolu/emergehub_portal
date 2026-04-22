@@ -1,11 +1,15 @@
-<h2 style="margin-top:0;">Set new password</h2>
-<% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
-<form method="post" action="/auth/reset-password">
+<h1 class="member-auth-h1">Set new password</h1>
+<p class="member-auth-lead">Choose a strong password for your account.</p>
+<% if (error) { %><div class="alert alert-error member-auth-alert"><%= error %></div><% } %>
+<form method="post" action="/auth/reset-password" class="member-auth-form">
   <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
   <input type="hidden" name="token" value="<%= token %>" />
-  <div class="form-row">
-    <label for="password">New password</label>
-    <input id="password" name="password" type="password" minlength="8" required autocomplete="new-password" />
+  <div class="member-auth-field">
+    <label class="member-auth-label" for="password">New password</label>
+    <input class="member-auth-input" id="password" name="password" type="password" minlength="8" required autocomplete="new-password" placeholder="At least 8 characters" />
   </div>
-  <button type="submit" class="btn btn-primary">Update password</button>
+  <button type="submit" class="btn btn-primary member-auth-submit">Update password</button>
 </form>
+<div class="member-auth-links">
+  <a href="/auth/login">Back to sign in</a>
+</div>

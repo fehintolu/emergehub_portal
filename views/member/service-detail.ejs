@@ -93,7 +93,7 @@
 
 <% if (typeof meetingCredits !== 'undefined' && meetingCredits && (meetingCredits.granted > 0 || meetingCredits.available > 0)) { %>
           <div class="sr-credits-strip">
-            Meeting room credits this month: <strong><%= meetingCredits.available %></strong> min remaining of <%= meetingCredits.granted %> (<%= meetingCredits.used %> used).
+            Meeting room credits: <strong><%= meetingCredits.available %></strong> min remaining of <%= meetingCredits.granted %> (<%= meetingCredits.used %> used)<% if (meetingCredits.pool_expires_on) { %> · valid through <%= formatDate(meetingCredits.pool_expires_on) %><% } %>.
             <a href="/meeting-rooms" class="portal-inline-link">Book a room</a>
           </div>
 <% } %>
@@ -267,6 +267,9 @@
           <div class="sr-msg-bubble">
             <small class="sr-msg-meta"><%= msg.sender_type %> · <%= formatDateTime(msg.created_at) %></small>
             <p class="sr-msg-body"><%= msg.body %></p>
+            <% if (msg.attachment_name && msg.attachment_document_id) { %>
+            <p class="sr-msg-body" style="margin-top:8px;font-size:13px;"><a href="/documents/download/<%= msg.attachment_document_id %>" class="portal-inline-link">Attachment: <%= msg.attachment_name %></a></p>
+            <% } %>
           </div>
           <% }); %>
           <form method="post" action="/services/<%= sr.id %>/message" class="sr-message-form">

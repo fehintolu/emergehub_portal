@@ -4,6 +4,12 @@ const { pool } = require('../lib/db');
 const { requireValidCsrf } = require('../lib/csrf');
 const { requireAdmin } = require('../middleware/adminAuth');
 const { adminLayoutLocals } = require('../middleware/adminLayoutLocals');
+const { restrictConsultantScope } = require('../middleware/consultantScope');
+const {
+  blockViewerMutations,
+  requireSuperAdmin,
+  enforceViewerReadOnlyGet,
+} = require('../lib/adminRbac');
 const { formatNgn, formatDate, formatDateTime } = require('../lib/format');
 const { getSetting } = require('../lib/portalSettings');
 const { nextInvoiceNumber } = require('../lib/invoiceNumber');
@@ -16,6 +22,9 @@ const { sendServiceRequestInvoiceNotifications } = require('../lib/serviceReques
 const router = express.Router();
 router.use(requireAdmin);
 router.use(adminLayoutLocals);
+router.use(restrictConsultantScope);
+router.use(enforceViewerReadOnlyGet);
+router.use(blockViewerMutations);
 
 const WD = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -129,7 +138,7 @@ router.post('/meeting-rooms/rooms/:id/edit', requireValidCsrf, async (req, res) 
   res.redirect(`/admin/meeting-rooms/rooms/${id}/edit?msg=saved`);
 });
 
-router.post('/meeting-rooms/rooms/:id/delete', requireValidCsrf, async (req, res) => {
+router.post('/meeting-rooms/rooms/:id/delete', requireValidCsrf, requireSuperAdmin, async (req, res) => {
   const id = req.params.id;
   if (!isUuid(id)) return res.status(404).send('Not found');
   await pool.query(`UPDATE meeting_rooms SET deleted_at = now(), updated_at = now() WHERE id = $1::uuid`, [id]);
@@ -155,7 +164,7 @@ router.post('/meeting-rooms/rooms/:id/blocks', requireValidCsrf, async (req, res
   res.redirect(`/admin/meeting-rooms/rooms/${id}/edit?msg=block`);
 });
 
-router.post('/meeting-rooms/blocks/:blockId/delete', requireValidCsrf, async (req, res) => {
+router.post('/meeting-rooms/blocks/:blockId/delete', requireValidCsrf, requireSuperAdmin, async (req, res) => {
   const bid = req.params.blockId;
   if (!isUuid(bid)) return res.status(404).send('Not found');
   const { rows } = await pool.query(
@@ -257,6 +266,9 @@ router.get('/meeting-rooms/calendar.json', async (req, res) => {
 router.get('/meeting-rooms/bookings', async (req, res) => {
   const status = String(req.query.status || '').trim();
   const roomId = String(req.query.room_id || '').trim();
+  const prefillMemberId = isUuid(String(req.query.member_id || '').trim())
+    ? String(req.query.member_id).trim()
+    : '';
   const params = [];
   let wh = `rb.deleted_at IS NULL`;
   if (status) {
@@ -286,6 +298,7 @@ router.get('/meeting-rooms/bookings', async (req, res) => {
     rows,
     rooms,
     filters: { status, room_id: roomId },
+    prefillMemberId,
     formatDateTime,
     formatNgn,
   });
@@ -347,7 +360,7 @@ router.post('/meeting-rooms/bookings/manual', requireValidCsrf, async (req, res)
           memberName: m.full_name,
           notifyInvoiceEmail: m.notify_email_invoice,
           invoiceNumber: invNo,
-          amountCents: summary.quote.total_cents,
+          amountCents: summary.payable_cents,
           invId: summary.invoiceId,
           dueDateStr: dueStr,
           serviceRequestId: null,
@@ -420,7 +433,7 @@ router.post('/meeting-rooms/discount-tiers', requireValidCsrf, async (req, res) 
   res.redirect('/admin/meeting-rooms/discount-tiers?msg=added');
 });
 
-router.post('/meeting-rooms/discount-tiers/:id/delete', requireValidCsrf, async (req, res) => {
+router.post('/meeting-rooms/discount-tiers/:id/delete', requireValidCsrf, requireSuperAdmin, async (req, res) => {
   const id = req.params.id;
   if (!isUuid(id)) return res.status(404).send('Not found');
   await pool.query(`UPDATE room_discount_tiers SET deleted_at = now(), updated_at = now() WHERE id = $1::uuid`, [id]);

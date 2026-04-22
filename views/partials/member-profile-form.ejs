@@ -1,0 +1,115 @@
+<% 
+  var _action = typeof profileFormAction !== 'undefined' ? profileFormAction : '';
+  var _submit = typeof submitLabel !== 'undefined' ? submitLabel : 'Save changes';
+%>
+<form method="post" action="<%= _action %>" class="member-profile-form amd-crm-form">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+  <input type="hidden" name="return_to" value="<%= typeof profileReturnTo !== 'undefined' ? profileReturnTo : 'edit' %>" />
+  <p class="amd-page-lead" style="margin:0 0 12px;font-size:12px;color:var(--text-muted);"><strong>Core</strong> fields are required for the portal account. Other fields are optional (CRM / billing).</p>
+
+  <h3 class="member-form-section-title">Account</h3>
+  <div class="amd-field-row">
+    <label class="amd-field-label">Display / full name</label>
+    <input class="amd-field-input" type="text" name="full_name" value="<%= m.full_name || '' %>" required autocomplete="name" />
+  </div>
+  <div class="amd-form-row">
+    <div class="amd-field-row">
+      <label class="amd-field-label">Email (login)</label>
+      <input class="amd-field-input" type="email" name="email" value="<%= m.email || '' %>" required autocomplete="email" />
+    </div>
+    <div class="amd-field-row">
+      <label class="amd-field-label">Primary phone</label>
+      <input class="amd-field-input" type="text" name="phone" value="<%= m.phone || '' %>" required autocomplete="tel" />
+    </div>
+  </div>
+  <div class="amd-field-row">
+    <label class="amd-field-label">New password <span style="font-weight:400;opacity:0.8">(optional)</span></label>
+    <input class="amd-field-input" type="password" name="new_password" minlength="8" autocomplete="new-password" placeholder="Leave blank to keep current password" />
+  </div>
+
+  <h3 class="member-form-section-title">Business</h3>
+  <div class="amd-field-row">
+    <label class="amd-field-label">Company name</label>
+    <input class="amd-field-input" type="text" name="business_name" value="<%= m.business_name || '' %>" />
+  </div>
+  <div class="amd-form-row">
+    <div class="amd-field-row">
+      <label class="amd-field-label">Business type</label>
+      <input class="amd-field-input" type="text" name="business_type" value="<%= m.business_type || '' %>" />
+    </div>
+    <div class="amd-field-row">
+      <label class="amd-field-label">Industry</label>
+      <input class="amd-field-input" type="text" name="industry" value="<%= m.industry || '' %>" />
+    </div>
+  </div>
+  <div class="amd-form-row">
+    <div class="amd-field-row">
+      <label class="amd-field-label">Website</label>
+      <input class="amd-field-input" type="url" name="website" value="<%= m.website || '' %>" placeholder="https://…" />
+    </div>
+    <div class="amd-field-row">
+      <label class="amd-field-label">CAC / reg. number</label>
+      <input class="amd-field-input" type="text" name="cac_number" value="<%= m.cac_number || '' %>" />
+    </div>
+  </div>
+
+  <h3 class="member-form-section-title">CRM &amp; contact</h3>
+  <div class="amd-form-row">
+    <div class="amd-field-row">
+      <label class="amd-field-label">CRM status</label>
+      <select class="amd-field-select" name="crm_status">
+        <option value="inactive" <%= String(m.crm_status || '').toLowerCase() !== 'active' ? 'selected' : '' %>>inactive</option>
+        <option value="active" <%= String(m.crm_status || '').toLowerCase() === 'active' ? 'selected' : '' %>>active</option>
+      </select>
+    </div>
+    <div class="amd-field-row">
+      <label class="amd-field-label">Contact type</label>
+      <input class="amd-field-input" type="text" name="contact_type" value="<%= m.contact_type || '' %>" placeholder="e.g. customer" />
+    </div>
+  </div>
+  <div class="amd-form-row">
+    <div class="amd-field-row">
+      <label class="amd-field-label">Salutation</label>
+      <input class="amd-field-input" type="text" name="salutation" value="<%= m.salutation || '' %>" placeholder="Mr., Mrs., Dr.…" />
+    </div>
+    <div class="amd-field-row">
+      <label class="amd-field-label">Contact name</label>
+      <input class="amd-field-input" type="text" name="contact_name" value="<%= m.contact_name || '' %>" />
+    </div>
+  </div>
+  <div class="amd-form-row">
+    <div class="amd-field-row">
+      <label class="amd-field-label">First name</label>
+      <input class="amd-field-input" type="text" name="first_name" value="<%= m.first_name || '' %>" />
+    </div>
+    <div class="amd-field-row">
+      <label class="amd-field-label">Last name</label>
+      <input class="amd-field-input" type="text" name="last_name" value="<%= m.last_name || '' %>" />
+    </div>
+  </div>
+  <div class="amd-form-row">
+    <div class="amd-field-row">
+      <label class="amd-field-label">Billing state</label>
+      <input class="amd-field-input" type="text" name="billing_state" value="<%= m.billing_state || '' %>" />
+    </div>
+    <div class="amd-field-row">
+      <label class="amd-field-label">Billing country</label>
+      <input class="amd-field-input" type="text" name="billing_country" value="<%= m.billing_country || '' %>" />
+    </div>
+  </div>
+  <div class="amd-field-row">
+    <label class="amd-field-label">Mobile phone</label>
+    <input class="amd-field-input" type="text" name="mobile_phone" value="<%= m.mobile_phone || '' %>" />
+  </div>
+  <div class="amd-field-row">
+    <label class="amd-field-label">CRM product / notes</label>
+    <input class="amd-field-input" type="text" name="crm_product" value="<%= m.crm_product || '' %>" />
+  </div>
+
+  <button type="submit" class="amd-btn-sm amd-btn-sm-primary" style="margin-top:12px;"><%= _submit %></button>
+</form>
+<style>
+  .member-form-section-title { font-size: 13px; font-weight: 600; margin: 16px 0 8px; padding-top: 8px; border-top: 1px solid var(--border, #e8e8e8); }
+  .member-form-section-title:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+  .member-profile-form .amd-form-section-title { margin-top: 0; }
+</style>

@@ -36,6 +36,7 @@ function requireVerifiedEmail(req, res, next) {
   const p = (req.originalUrl || req.url || '').split('?')[0];
   if (
     p.startsWith('/settings') ||
+    p.startsWith('/help') ||
     p.startsWith('/auth/logout') ||
     p.startsWith('/auth/resend-verification') ||
     p.startsWith('/auth/verify-required')

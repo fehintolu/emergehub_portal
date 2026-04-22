@@ -1,16 +1,21 @@
-<h2 style="margin-top:0;">Forgot password</h2>
+<h1 class="member-auth-h1">Forgot password</h1>
 <% if (sent) { %>
-  <p>If an account exists for that email, we sent reset instructions.</p>
-  <p><a href="/auth/login">Sign in</a></p>
+  <p class="member-auth-lead">If an account exists for that email, we sent reset instructions.</p>
+  <div class="member-auth-links" style="margin-top:1rem;">
+    <a href="/auth/login" class="btn btn-primary member-auth-submit" style="display:inline-flex;justify-content:center;text-decoration:none;width:100%;box-sizing:border-box;">Sign in</a>
+  </div>
 <% } else { %>
-  <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
-  <form method="post" action="/auth/forgot-password">
+  <p class="member-auth-lead">Enter your email and we will send a link to reset your password.</p>
+  <% if (error) { %><div class="alert alert-error member-auth-alert"><%= error %></div><% } %>
+  <form method="post" action="/auth/forgot-password" class="member-auth-form">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-    <div class="form-row">
-      <label for="email">Email</label>
-      <input id="email" name="email" type="email" required />
+    <div class="member-auth-field">
+      <label class="member-auth-label" for="email">Email</label>
+      <input class="member-auth-input" id="email" name="email" type="email" required autocomplete="email" />
     </div>
-    <button type="submit" class="btn btn-primary">Send reset link</button>
+    <button type="submit" class="btn btn-primary member-auth-submit">Send reset link</button>
   </form>
+  <div class="member-auth-links">
+    <a href="/auth/login">Back to sign in</a>
+  </div>
 <% } %>
-<p><a href="/auth/login">Back</a></p>

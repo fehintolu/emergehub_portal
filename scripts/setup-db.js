@@ -36,6 +36,10 @@ const statements = [
     updated_at timestamptz NOT NULL DEFAULT now(),
     deleted_at timestamptz
   );`,
+  `ALTER TABLE portal_admin_users ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'super_admin';`,
+  `UPDATE portal_admin_users SET role = 'super_admin' WHERE role IS NULL OR trim(role) = '';`,
+  `ALTER TABLE portal_admin_users ADD COLUMN IF NOT EXISTS password_reset_token text;`,
+  `ALTER TABLE portal_admin_users ADD COLUMN IF NOT EXISTS password_reset_expires timestamptz;`,
 
   `CREATE TABLE IF NOT EXISTS members (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -224,6 +228,7 @@ const statements = [
     updated_at timestamptz NOT NULL DEFAULT now(),
     deleted_at timestamptz
   );`,
+  `ALTER TABLE service_request_messages ADD COLUMN IF NOT EXISTS attachment_document_id uuid REFERENCES member_documents(id);`,
 
   `CREATE TABLE IF NOT EXISTS support_messages (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -301,6 +306,7 @@ const statements = [
   `ALTER TABLE services ADD COLUMN IF NOT EXISTS portal_active boolean NOT NULL DEFAULT true;`,
   `ALTER TABLE services ADD COLUMN IF NOT EXISTS booking_mode text NOT NULL DEFAULT 'request';`,
   `ALTER TABLE services ADD COLUMN IF NOT EXISTS deleted_at timestamptz;`,
+  `ALTER TABLE services ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();`,
 
   `CREATE TABLE IF NOT EXISTS service_plans (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -556,6 +562,8 @@ const statements = [
     UNIQUE(member_id, period_month)
   );`,
   `CREATE INDEX IF NOT EXISTS idx_credit_ledger_member_period ON member_meeting_credit_ledger(member_id, period_month);`,
+  `ALTER TABLE member_meeting_credit_ledger ADD COLUMN IF NOT EXISTS pool_expires_on date;`,
+  `UPDATE member_meeting_credit_ledger SET pool_expires_on = (date_trunc('month', period_month) + interval '1 month - 1 day')::date WHERE pool_expires_on IS NULL;`,
 
   `CREATE TABLE IF NOT EXISTS meeting_credit_events (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -569,13 +577,38 @@ const statements = [
     created_at timestamptz NOT NULL DEFAULT now()
   );`,
   `CREATE INDEX IF NOT EXISTS idx_meeting_credit_events_member ON meeting_credit_events(member_id, created_at DESC);`,
+  `ALTER TABLE meeting_credit_events ADD COLUMN IF NOT EXISTS admin_id uuid REFERENCES portal_admin_users(id) ON DELETE SET NULL;`,
 
   `ALTER TABLE membership_tiers ADD COLUMN IF NOT EXISTS service_plan_id uuid REFERENCES service_plans(id) ON DELETE SET NULL;`,
+
+  `ALTER TABLE members ADD COLUMN IF NOT EXISTS salutation text`,
+  `ALTER TABLE members ADD COLUMN IF NOT EXISTS first_name text`,
+  `ALTER TABLE members ADD COLUMN IF NOT EXISTS last_name text`,
+  `ALTER TABLE members ADD COLUMN IF NOT EXISTS billing_state text`,
+  `ALTER TABLE members ADD COLUMN IF NOT EXISTS billing_country text`,
+  `ALTER TABLE members ADD COLUMN IF NOT EXISTS mobile_phone text`,
+  `ALTER TABLE members ADD COLUMN IF NOT EXISTS contact_name text`,
+  `ALTER TABLE members ADD COLUMN IF NOT EXISTS contact_type text`,
+  `ALTER TABLE members ADD COLUMN IF NOT EXISTS crm_status text`,
+  `ALTER TABLE members ADD COLUMN IF NOT EXISTS crm_product text`,
+
+  `ALTER TABLE members ADD COLUMN IF NOT EXISTS is_test_account boolean NOT NULL DEFAULT false;`,
+  `CREATE INDEX IF NOT EXISTS idx_members_test_account ON members(is_test_account) WHERE deleted_at IS NULL AND is_test_account = true;`,
+
   `DO $$ BEGIN
      ALTER TABLE member_plans
        ADD CONSTRAINT member_plans_space_unit_id_fkey
        FOREIGN KEY (space_unit_id) REFERENCES space_units(id) ON DELETE SET NULL;
    EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
+
+  /* Paid workspace invoices: pending_activation until access start is chosen */
+  `ALTER TABLE member_plans ADD COLUMN IF NOT EXISTS source_service_request_id uuid REFERENCES service_requests(id) ON DELETE SET NULL;`,
+  `ALTER TABLE member_plans ADD COLUMN IF NOT EXISTS source_invoice_id uuid REFERENCES invoices(id) ON DELETE SET NULL;`,
+  `ALTER TABLE member_plans ALTER COLUMN started_at DROP NOT NULL;`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_member_plans_one_pending_workspace
+     ON member_plans (source_invoice_id, source_service_request_id)
+     WHERE deleted_at IS NULL AND status = 'pending_activation'
+       AND source_invoice_id IS NOT NULL AND source_service_request_id IS NOT NULL;`,
 ];
 
 async function seedAdminAndSettings(client) {
@@ -583,8 +616,8 @@ async function seedAdminAndSettings(client) {
   const hash = bcrypt.hashSync('Admin1234', 10);
 
   await client.query(
-    `INSERT INTO portal_admin_users (username, email, password_hash, must_change_password, active)
-     VALUES ('admin', 'admin@emergehub.com.ng', $1, true, true)
+    `INSERT INTO portal_admin_users (username, email, password_hash, must_change_password, active, role)
+     VALUES ('admin', 'admin@emergehub.com.ng', $1, true, true, 'super_admin')
      ON CONFLICT (username) DO NOTHING`,
     [hash]
   );
@@ -617,34 +650,47 @@ async function seedAdminAndSettings(client) {
 }
 
 async function seedMeetingRoomsDefault(client) {
-  const { rows } = await client.query(
+  const { rows: existing } = await client.query(
     `SELECT id FROM meeting_rooms WHERE deleted_at IS NULL LIMIT 1`
   );
-  if (rows[0]) return;
-  const { rows: ins } = await client.query(
-    `INSERT INTO meeting_rooms (name, description, capacity, hourly_rate_cents, active, sort_order)
-     VALUES (
-       'Main meeting room',
-       'Demo room for the portal — edit hours, pricing, and blocks in Admin.',
-       10,
-       1500000,
-       true,
-       0
-     )
-     RETURNING id`
-  );
-  const rid = ins[0].id;
-  for (const wd of [1, 2, 3, 4, 5]) {
+  if (!existing[0]) {
     await client.query(
-      `INSERT INTO room_availability_schedule (meeting_room_id, weekday, is_open, opens_at, closes_at, effective_from)
-       VALUES ($1::uuid, $2, true, '09:00'::time, '18:00'::time, CURRENT_DATE)`,
-      [rid, wd]
+      `INSERT INTO meeting_rooms (name, description, capacity, hourly_rate_cents, active, sort_order)
+       VALUES (
+         'Main meeting room',
+         'Demo room for the portal — edit hours, pricing, and blocks in Admin.',
+         10,
+         1500000,
+         true,
+         0
+       )`
     );
   }
-  await client.query(
-    `INSERT INTO room_discount_tiers (meeting_room_id, min_hours, discount_percent, label, active, sort_order)
-     VALUES (NULL, 2, 10.00, '2+ hours — 10%', true, 0)`
+  const { rows: rooms } = await client.query(`SELECT id FROM meeting_rooms WHERE deleted_at IS NULL`);
+  for (const r of rooms) {
+    const { rows: c } = await client.query(
+      `SELECT COUNT(*)::int AS n FROM room_availability_schedule
+       WHERE meeting_room_id = $1::uuid AND deleted_at IS NULL`,
+      [r.id]
+    );
+    if (c[0].n > 0) continue;
+    for (const wd of [1, 2, 3, 4, 5]) {
+      await client.query(
+        `INSERT INTO room_availability_schedule (meeting_room_id, weekday, is_open, opens_at, closes_at, effective_from)
+         VALUES ($1::uuid, $2, true, '09:00'::time, '18:00'::time, CURRENT_DATE)`,
+        [r.id, wd]
+      );
+    }
+  }
+  const { rows: tier } = await client.query(
+    `SELECT 1 FROM room_discount_tiers WHERE deleted_at IS NULL AND meeting_room_id IS NULL LIMIT 1`
   );
+  if (!tier[0]) {
+    await client.query(
+      `INSERT INTO room_discount_tiers (meeting_room_id, min_hours, discount_percent, label, active, sort_order)
+       VALUES (NULL, 2, 10.00, '2+ hours — 10%', true, 0)`
+    );
+  }
 }
 
 async function seedCoreWorkspaceDefaults(client) {

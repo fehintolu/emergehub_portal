@@ -10,7 +10,7 @@
   <%- include('../partials/member-sidebar') %>
 
   <% var mp = typeof memberPath !== 'undefined' ? String(memberPath) : ''; %>
-  <% var _theme = mp === '/workspace' || mp.indexOf('/meeting-rooms') === 0 || mp.indexOf('/billing') === 0 || mp === '/services' || mp.indexOf('/services/') === 0; %>
+  <% var _theme = mp === '/workspace' || mp.indexOf('/meeting-rooms') === 0 || mp.indexOf('/billing') === 0 || mp === '/services' || mp.indexOf('/services/') === 0 || mp.indexOf('/settings') === 0 || mp.indexOf('/help') === 0; %>
   <% var _workspaceOnly = mp === '/workspace'; %>
   <% var _svcDetail = typeof headerVariant !== 'undefined' && headerVariant === 'service-detail'; %>
   <div class="main<%= _theme ? ' main--portal-theme' : '' %>">

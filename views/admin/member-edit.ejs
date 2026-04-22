@@ -1,0 +1,41 @@
+<div class="admin-member-detail" style="max-width:720px;">
+  <div class="amd-topbar">
+    <div class="amd-breadcrumb">
+      <a class="amd-bc-back" href="/admin/members/<%= m.id %>" title="Back to member" aria-label="Back">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 2L4 6l4 4"/></svg>
+      </a>
+      <div class="amd-bc-path">
+        <a class="amd-bc-link" href="/admin/members">Members</a>
+        <span class="amd-bc-sep">›</span>
+        <a class="amd-bc-link" href="/admin/members/<%= m.id %>"><%= m.full_name %></a>
+        <span class="amd-bc-sep">›</span>
+        <span class="amd-bc-current">Edit</span>
+      </div>
+    </div>
+  </div>
+
+  <% if (typeof query !== 'undefined' && query.msg === 'profile_saved') { %>
+    <div class="alert alert-success anim anim-1" style="margin-bottom:12px;">Member details saved.</div>
+  <% } %>
+  <% if (typeof query !== 'undefined' && query.err === 'email_taken') { %>
+    <div class="alert alert-error anim anim-1" style="margin-bottom:12px;">That email is already used by another member.</div>
+  <% } %>
+  <% if (typeof query !== 'undefined' && query.err === 'invalid') { %>
+    <div class="alert alert-error anim anim-1" style="margin-bottom:12px;">Check required fields (name, email, phone).</div>
+  <% } %>
+
+  <div class="amd-card">
+    <div class="amd-card-hd">
+      <div class="amd-card-title">Edit member details</div>
+    </div>
+    <div class="amd-card-body">
+      <%- include('../partials/member-profile-form', {
+        m,
+        csrfToken,
+        profileFormAction: '/admin/members/' + m.id + '/profile',
+        profileReturnTo: 'edit',
+        submitLabel: 'Save all changes'
+      }) %>
+    </div>
+  </div>
+</div>

@@ -1,61 +1,276 @@
-<h2><%= inv.invoice_number %></h2>
-<p><%= inv.full_name %> · <%= inv.email %></p>
-<p>Status: <span class="badge"><%= inv.status %></span> · Due <%= formatDate(inv.due_date) %></p>
-<% if (typeof invoiceLinks !== 'undefined' && invoiceLinks && invoiceLinks.length) { %>
-  <div class="card" style="margin-bottom:12px;">
-    <h3 style="margin-top:0;">Linked service requests</h3>
-    <ul class="plain-list">
-      <% invoiceLinks.forEach(function (l) { %>
-        <li>
-          <strong><%= l.service_name %></strong> — <%= l.sr_title || 'Request' %>
-          · snapshot <%= formatNgn(l.amount_cents) %>
-          · <a href="/admin/service-requests/<%= l.service_request_id %>">Open</a>
-        </li>
-      <% }); %>
-    </ul>
-  </div>
-<% } %>
-<% if (typeof roomBooking !== 'undefined' && roomBooking) { %>
-  <div class="card" style="margin-bottom:12px;">
-    <h3 style="margin-top:0;">Meeting room booking</h3>
-    <p><strong><%= roomBooking.room_name %></strong> · <%= roomBooking.booking_reference %> · <%= roomBooking.status %></p>
-    <p class="page-lead" style="margin:0;"><%= formatDateTime(roomBooking.starts_at) %> → <%= formatDateTime(roomBooking.ends_at) %></p>
-  </div>
-<% } %>
-<table class="data">
-  <thead><tr><th>Description</th><th>Amount</th></tr></thead>
-  <tbody>
-    <% items.forEach(function (it) { %>
-      <tr><td><%= it.description %></td><td><%= formatNgn(it.amount_cents) %></td></tr>
-    <% }); %>
-  </tbody>
-  <tfoot><tr><th>Total</th><th><%= formatNgn(inv.total_cents) %></th></tr></tfoot>
-</table>
-<% if (inv.notes) { %><p>Notes: <%= inv.notes %></p><% } %>
+<% 
+  function invStatusLabel(s) {
+    var k = String(s || '').toLowerCase();
+    var map = {
+      awaiting_confirmation: 'Awaiting bank confirmation',
+      unpaid: 'Unpaid',
+      sent: 'Sent',
+      paid: 'Paid',
+      overdue: 'Overdue',
+      draft: 'Draft'
+    };
+    return map[k] || String(s || '').replace(/_/g, ' ');
+  }
+  function invStatusPillClass(s) {
+    var k = String(s || '').toLowerCase();
+    if (k === 'paid') return 'inv-pill inv-pill--ok';
+    if (k === 'overdue') return 'inv-pill inv-pill--danger';
+    if (k === 'awaiting_confirmation') return 'inv-pill inv-pill--warn';
+    if (k === 'unpaid' || k === 'sent') return 'inv-pill inv-pill--neutral';
+    return 'inv-pill inv-pill--muted';
+  }
+  function payMethodLabel(m) {
+    m = String(m || '').toLowerCase();
+    if (m === 'manual') return 'Manual (admin)';
+    if (m === 'bank_transfer') return 'Bank transfer';
+    if (m === 'paystack') return 'Paystack / card';
+    return m ? m.replace(/_/g, ' ') : '—';
+  }
+  function srWorkspaceBooking(detailJson) {
+    try {
+      var d = typeof detailJson === 'object' && detailJson !== null ? detailJson : JSON.parse(String(detailJson || '{}'));
+      return d.workspace_booking === true || d.workspace_booking === 'true';
+    } catch (e) { return false; }
+  }
+  function mpStatusLabel(st) {
+    return String(st || '').replace(/_/g, ' ');
+  }
+%>
+<div class="inv-detail">
+  <p class="inv-detail-back"><a href="/admin/invoices" class="inv-detail-back-link">← All invoices</a></p>
 
-<% if (['unpaid','sent','overdue'].includes(inv.status)) { %>
-  <form method="post" action="/admin/invoices/<%= inv.id %>/paid" onsubmit="return confirm('Mark paid manually?');">
-    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-    <% if (typeof showAccessStartField !== 'undefined' && showAccessStartField) { %>
-      <div class="form-row" style="margin-top:10px;">
-        <label>Access start (optional)</label>
-        <input type="datetime-local" name="access_starts_at" />
-        <small style="display:block;margin-top:6px;color:var(--text-secondary);">For timed workspace bookings linked to this invoice. Leave blank to start access immediately when you confirm payment.</small>
+  <div class="inv-detail-hero">
+    <div class="inv-detail-hero-main">
+      <p class="inv-detail-kicker">Invoice number</p>
+      <h1 class="inv-detail-number"><%= inv.invoice_number %></h1>
+      <div class="inv-detail-hero-row">
+        <span class="<%= invStatusPillClass(inv.status) %>"><%= invStatusLabel(inv.status) %></span>
+        <span class="inv-detail-currency"><%= (inv.currency || 'NGN').toUpperCase() %></span>
       </div>
-    <% } %>
-    <button type="submit" class="btn btn-secondary" style="margin-top:8px;">Mark paid (manual)</button>
-  </form>
-<% } %>
-<% if (inv.status === 'awaiting_confirmation') { %>
-  <form method="post" action="/admin/invoices/<%= inv.id %>/confirm-bank" style="margin-top:0.75rem;">
-    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-    <% if (typeof showAccessStartField !== 'undefined' && showAccessStartField) { %>
-      <div class="form-row">
-        <label>Access start (optional)</label>
-        <input type="datetime-local" name="access_starts_at" />
-        <small style="display:block;margin-top:6px;color:var(--text-secondary);">Leave blank to start access immediately when you confirm the bank transfer.</small>
+    </div>
+    <div class="inv-detail-hero-total">
+      <p class="inv-detail-total-label">Total</p>
+      <p class="inv-detail-total-value"><%= formatNgn(inv.total_cents) %></p>
+      <% if (Number(computedSubtotalCents) !== Number(inv.total_cents)) { %>
+        <p class="inv-detail-subtotal-hint">Subtotal <%= formatNgn(computedSubtotalCents) %></p>
+      <% } %>
+    </div>
+  </div>
+
+  <div class="inv-detail-grid">
+    <div class="inv-detail-stat">
+      <span class="inv-detail-stat-label">Due date</span>
+      <span class="inv-detail-stat-value"><%= formatDate(inv.due_date) %></span>
+    </div>
+    <div class="inv-detail-stat">
+      <span class="inv-detail-stat-label">Created</span>
+      <span class="inv-detail-stat-value"><%= inv.created_at ? formatDateTime(inv.created_at) : '—' %></span>
+    </div>
+    <div class="inv-detail-stat">
+      <span class="inv-detail-stat-label">Last updated</span>
+      <span class="inv-detail-stat-value"><%= inv.updated_at ? formatDateTime(inv.updated_at) : '—' %></span>
+    </div>
+    <div class="inv-detail-stat inv-detail-stat--wide">
+      <span class="inv-detail-stat-label">Internal ID</span>
+      <code class="inv-detail-code" title="Copy for support"><%= inv.id %></code>
+    </div>
+  </div>
+
+  <div class="inv-detail-member card">
+    <h3 class="inv-detail-card-title">Member</h3>
+    <div class="inv-detail-member-body">
+      <div>
+        <p class="inv-detail-member-name"><%= inv.full_name %></p>
+        <p class="inv-detail-member-meta"><a href="mailto:<%= inv.email %>"><%= inv.email %></a></p>
+        <% if (inv.member_phone) { %>
+          <p class="inv-detail-member-meta"><%= inv.member_phone %></p>
+        <% } %>
       </div>
+      <a class="btn btn-secondary inv-detail-member-btn" href="/admin/members/<%= inv.member_id %>">View member</a>
+    </div>
+  </div>
+
+  <% if (typeof cataloguePlans !== 'undefined' && cataloguePlans && cataloguePlans.length) { %>
+  <div class="card inv-detail-block">
+    <h3 class="inv-detail-card-title">Catalogue membership</h3>
+    <p class="inv-detail-card-lead">Workspace plan rows linked to this invoice (activation / renewal).</p>
+    <div class="table-wrap">
+      <table class="data inv-detail-table">
+        <thead>
+          <tr>
+            <th>Plan</th>
+            <th>Status</th>
+            <th>Started</th>
+            <th>Renewal</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% cataloguePlans.forEach(function (mp) { %>
+            <tr>
+              <td>
+                <% if (mp.catalogue_plan_title) { %><%= mp.catalogue_plan_title %><% } else { %><%= mp.tier_name || '—' %><% } %>
+              </td>
+              <td><span class="<%= mp.status === 'active' ? 'inv-pill inv-pill--ok' : (mp.status === 'pending_activation' ? 'inv-pill inv-pill--warn' : 'inv-pill inv-pill--muted') %>"><%= mpStatusLabel(mp.status) %></span></td>
+              <td><%= mp.started_at ? formatDate(mp.started_at) : '—' %></td>
+              <td><%= mp.renewal_at ? formatDate(mp.renewal_at) : '—' %></td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <% } %>
+
+  <% if (typeof invoiceLinks !== 'undefined' && invoiceLinks && invoiceLinks.length) { %>
+  <div class="card inv-detail-block">
+    <h3 class="inv-detail-card-title">Service requests</h3>
+    <div class="table-wrap">
+      <table class="data inv-detail-table">
+        <thead>
+          <tr>
+            <th>Service</th>
+            <th>Request</th>
+            <th>Status</th>
+            <th>Plan</th>
+            <th>Access window</th>
+            <th>Link</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% invoiceLinks.forEach(function (l) { %>
+            <tr>
+              <td>
+                <%= l.service_name %>
+                <% if (srWorkspaceBooking(l.detail_json)) { %>
+                  <span class="inv-pill inv-pill--tag">Workspace</span>
+                <% } %>
+              </td>
+              <td><%= l.sr_title || '—' %></td>
+              <td><span class="inv-pill inv-pill--muted"><%= String(l.sr_status || '').replace(/_/g, ' ') %></span></td>
+              <td><%= l.plan_title || '—' %></td>
+              <td class="inv-detail-nowrap">
+                <% if (l.access_started_at || l.access_ends_at) { %>
+                  <%= l.access_started_at ? formatDateTime(l.access_started_at) : '—' %>
+                  <span class="inv-detail-arrow">→</span>
+                  <%= l.access_ends_at ? formatDateTime(l.access_ends_at) : '—' %>
+                <% } else { %>
+                  <span class="inv-detail-muted">Not scheduled</span>
+                <% } %>
+              </td>
+              <td><a href="/admin/service-requests/<%= l.service_request_id %>">Open</a></td>
+            </tr>
+            <% if (typeof l.amount_cents === 'number') { %>
+            <tr class="inv-detail-subrow">
+              <td colspan="6"><span class="inv-detail-muted">Linked amount (snapshot)</span> <strong><%= formatNgn(l.amount_cents) %></strong><% if (l.description) { %> · <%= l.description %><% } %></td>
+            </tr>
+            <% } %>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <% } %>
+
+  <% if (typeof roomBooking !== 'undefined' && roomBooking) { %>
+  <div class="card inv-detail-block">
+    <h3 class="inv-detail-card-title">Meeting room booking</h3>
+    <p class="inv-detail-room-line"><strong><%= roomBooking.room_name %></strong> · <%= roomBooking.booking_reference %> · <span class="inv-pill inv-pill--neutral"><%= roomBooking.status %></span></p>
+    <p class="inv-detail-room-time"><%= formatDateTime(roomBooking.starts_at) %> → <%= formatDateTime(roomBooking.ends_at) %></p>
+  </div>
+  <% } %>
+
+  <div class="card inv-detail-block">
+    <h3 class="inv-detail-card-title">Line items</h3>
+    <div class="table-wrap">
+      <table class="data inv-detail-table">
+        <thead><tr><th>Description</th><th class="inv-detail-num">Amount</th></tr></thead>
+        <tbody>
+          <% items.forEach(function (it) { %>
+            <tr><td><%= it.description %></td><td class="inv-detail-num"><%= formatNgn(it.amount_cents) %></td></tr>
+          <% }); %>
+        </tbody>
+        <tfoot><tr><th>Total</th><th class="inv-detail-num"><%= formatNgn(inv.total_cents) %></th></tr></tfoot>
+      </table>
+    </div>
+  </div>
+
+  <% if (typeof payments !== 'undefined' && payments && payments.length) { %>
+  <div class="card inv-detail-block">
+    <h3 class="inv-detail-card-title">Payments</h3>
+    <div class="table-wrap">
+      <table class="data inv-detail-table">
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Method</th>
+            <th>Status</th>
+            <th>Amount</th>
+            <th>Receipt / ref</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% payments.forEach(function (p) { %>
+            <tr>
+              <td class="inv-detail-nowrap"><%= formatDateTime(p.created_at) %></td>
+              <td><%= payMethodLabel(p.method) %></td>
+              <td><span class="<%= String(p.status || '').toLowerCase() === 'completed' ? 'inv-pill inv-pill--ok' : 'inv-pill inv-pill--warn' %>"><%= String(p.status || '').replace(/_/g, ' ') %></span></td>
+              <td class="inv-detail-num"><%= formatNgn(p.amount_cents) %></td>
+              <td>
+                <% if (p.receipt_number) { %><code class="inv-detail-code inv-detail-code--sm"><%= p.receipt_number %></code><% } %>
+                <% if (p.paystack_reference) { %>
+                  <% if (p.receipt_number) { %><br /><% } %>
+                  <code class="inv-detail-code inv-detail-code--sm"><%= p.paystack_reference %></code>
+                <% } %>
+                <% if (!p.receipt_number && !p.paystack_reference) { %>—<% } %>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <% } %>
+
+  <% if (inv.notes) { %>
+  <div class="card inv-detail-block">
+    <h3 class="inv-detail-card-title">Invoice notes</h3>
+    <p class="inv-detail-notes"><%= inv.notes %></p>
+  </div>
+  <% } %>
+
+  <div class="card inv-detail-actions">
+    <h3 class="inv-detail-card-title">Actions</h3>
+    <% if (['unpaid','sent','overdue'].includes(inv.status)) { %>
+      <form method="post" action="/admin/invoices/<%= inv.id %>/paid" class="inv-detail-form" onsubmit="return confirm('Mark this invoice paid manually?');">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+        <% if (typeof showAccessStartField !== 'undefined' && showAccessStartField) { %>
+          <div class="form-row inv-detail-form-row">
+            <label for="access_starts_manual">Access start (optional)</label>
+            <input id="access_starts_manual" type="datetime-local" name="access_starts_at" />
+            <small class="inv-detail-help">Core Workspace plan: set a start time, or leave blank to record payment only until the member or you activates the plan. Other timed services still start access immediately if left blank.</small>
+          </div>
+        <% } %>
+        <button type="submit" class="btn btn-secondary">Mark paid (manual)</button>
+      </form>
     <% } %>
-    <button type="submit" class="btn btn-primary">Confirm bank transfer</button>
-  </form>
-<% } %>
+    <% if (inv.status === 'awaiting_confirmation') { %>
+      <form method="post" action="/admin/invoices/<%= inv.id %>/confirm-bank" class="inv-detail-form">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+        <% if (typeof showAccessStartField !== 'undefined' && showAccessStartField) { %>
+          <div class="form-row inv-detail-form-row">
+            <label for="access_starts_bank">Access start (optional)</label>
+            <input id="access_starts_bank" type="datetime-local" name="access_starts_at" />
+            <small class="inv-detail-help">Same as manual: workspace plans can stay paid-only until activation; other timed services default to immediate access if blank.</small>
+          </div>
+        <% } %>
+        <button type="submit" class="btn btn-primary">Confirm bank transfer</button>
+      </form>
+    <% } %>
+    <% if (inv.status === 'paid') { %>
+      <p class="inv-detail-muted">This invoice is paid. Adjustments are usually done from the member record or a new invoice.</p>
+    <% } %>
+    <% if (!['unpaid','sent','overdue','awaiting_confirmation','paid'].includes(inv.status)) { %>
+      <p class="inv-detail-muted">Status: <strong><%= invStatusLabel(inv.status) %></strong>. Use invoices list or member tools for next steps.</p>
+    <% } %>
+  </div>
+</div>

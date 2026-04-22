@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title><%= title %> — EmergeHub Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/css/member-portal.css?v=<%= typeof memberPortalCssV !== 'undefined' ? memberPortalCssV : '1' %>" />
   <link rel="stylesheet" href="/css/admin-ui.css?v=<%= typeof adminUiCssV !== 'undefined' ? adminUiCssV : '1' %>" />
 </head>
@@ -11,12 +14,14 @@
   <%- include('../partials/admin-sidebar') %>
 
   <div class="main">
+    <% if (typeof hideAdminHeader === 'undefined' || !hideAdminHeader) { %>
     <header class="page-header anim anim-1">
       <div>
         <div class="page-title"><%= title %></div>
         <div class="page-sub"><%= typeof pageSub === 'string' && pageSub ? pageSub : 'Portal administration' %></div>
       </div>
     </header>
+    <% } %>
 
     <div class="member-body">
       <%- body %>

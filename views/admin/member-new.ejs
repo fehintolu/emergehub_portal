@@ -1,9 +1,27 @@
 <h2>Add member</h2>
 <form method="post" action="/admin/members/new">
   <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-  <div class="form-row"><label>Full name</label><input name="full_name" required /></div>
+  <div class="form-row"><label>Full name (display)</label><input name="full_name" required /></div>
   <div class="form-row"><label>Email</label><input type="email" name="email" required /></div>
   <div class="form-row"><label>Phone</label><input name="phone" required /></div>
   <div class="form-row"><label>Initial password</label><input type="password" name="password" minlength="8" required /></div>
+  <p style="margin:1.25rem 0 0.5rem;font-weight:600;">Optional — CRM / billing</p>
+  <div class="form-row"><label>Company name</label><input name="business_name" /></div>
+  <div class="form-row"><label>Salutation</label><input name="salutation" placeholder="Mr., Mrs., Dr." /></div>
+  <div class="form-row"><label>First name</label><input name="first_name" /></div>
+  <div class="form-row"><label>Last name</label><input name="last_name" /></div>
+  <div class="form-row"><label>Contact name</label><input name="contact_name" /></div>
+  <div class="form-row"><label>Contact type</label><input name="contact_type" placeholder="customer" /></div>
+  <div class="form-row"><label>Billing state</label><input name="billing_state" /></div>
+  <div class="form-row"><label>Billing country</label><input name="billing_country" /></div>
+  <div class="form-row"><label>Mobile phone</label><input name="mobile_phone" /></div>
+  <div class="form-row"><label>CRM product / notes</label><input name="crm_product" /></div>
+  <div class="form-row">
+    <label>CRM status</label>
+    <select name="crm_status">
+      <option value="active" selected>active</option>
+      <option value="inactive">inactive</option>
+    </select>
+  </div>
   <button type="submit" class="btn btn-primary">Create</button>
 </form>

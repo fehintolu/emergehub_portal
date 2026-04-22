@@ -34,10 +34,12 @@
           — <%= t.room_name || 'Global' %>
           <% if (t.label) { %> (<%= t.label %>)<% } %>
           <%= t.active ? '' : ' [inactive]' %>
+          <% if (typeof canArchive !== 'undefined' && canArchive) { %>
           <form method="post" action="/admin/meeting-rooms/discount-tiers/<%= t.id %>/delete" style="display:inline;margin-left:8px;" onsubmit="return confirm('Delete tier?');">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
             <button type="submit" class="btn" style="padding:2px 8px;font-size:12px;">Delete</button>
           </form>
+          <% } %>
         </li>
       <% }); %>
     </ul>

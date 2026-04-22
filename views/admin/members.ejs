@@ -1,18 +1,59 @@
+<% if (typeof query !== 'undefined' && query.msg === 'created') { %>
+  <p class="alert alert-success">Member created. Showing <strong>all members</strong> so you can find the new record; switch plan filter back to <em>Active plan</em> when needed.</p>
+<% } %>
 <p><a class="btn btn-primary" href="/admin/members/new">Add member</a></p>
-<form method="get" action="/admin/members" style="margin-bottom:1rem;">
-  <input type="search" name="q" placeholder="Search name or email" value="<%= typeof query !== 'undefined' && query.q ? query.q : '' %>" />
-  <button type="submit" class="btn btn-secondary">Search</button>
+<form method="get" action="/admin/members" class="members-filter-form" style="margin-bottom:1rem;display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;">
+  <div>
+    <label for="mf-plan" style="display:block;font-size:12px;margin-bottom:4px;opacity:0.85;">Plan</label>
+    <select name="plan" id="mf-plan" class="btn btn-secondary" style="padding:6px 10px;">
+      <% var _pf = typeof planFilter !== 'undefined' ? planFilter : 'has_plan'; %>
+      <option value="has_plan" <%= _pf === 'has_plan' ? 'selected' : '' %>>Active plan (default)</option>
+      <option value="no_plan" <%= _pf === 'no_plan' ? 'selected' : '' %>>No active plan</option>
+      <option value="all" <%= _pf === 'all' ? 'selected' : '' %>>All members</option>
+    </select>
+  </div>
+  <div>
+    <label for="mf-crm" style="display:block;font-size:12px;margin-bottom:4px;opacity:0.85;">CRM status</label>
+    <select name="crm" id="mf-crm" class="btn btn-secondary" style="padding:6px 10px;">
+      <% var _cf = typeof crmFilter !== 'undefined' ? crmFilter : 'all'; %>
+      <option value="all" <%= _cf === 'all' ? 'selected' : '' %>>Any</option>
+      <option value="active" <%= _cf === 'active' ? 'selected' : '' %>>CRM active</option>
+      <option value="inactive" <%= _cf === 'inactive' ? 'selected' : '' %>>CRM inactive</option>
+    </select>
+  </div>
+  <div>
+    <label for="mf-portal" style="display:block;font-size:12px;margin-bottom:4px;opacity:0.85;">Portal</label>
+    <select name="portal" id="mf-portal" class="btn btn-secondary" style="padding:6px 10px;">
+      <% var _prt = typeof portalFilter !== 'undefined' ? portalFilter : 'all'; %>
+      <option value="all" <%= _prt === 'all' ? 'selected' : '' %>>Any</option>
+      <option value="active" <%= _prt === 'active' ? 'selected' : '' %>>Not suspended</option>
+      <option value="suspended" <%= _prt === 'suspended' ? 'selected' : '' %>>Suspended</option>
+    </select>
+  </div>
+  <div style="flex:1;min-width:180px;">
+    <label for="mf-q" style="display:block;font-size:12px;margin-bottom:4px;opacity:0.85;">Search</label>
+    <input type="search" id="mf-q" name="q" placeholder="Name, email, company…" value="<%= typeof query !== 'undefined' && query.q ? query.q : '' %>" style="width:100%;max-width:280px;padding:6px 10px;" />
+  </div>
+  <div>
+    <button type="submit" class="btn btn-secondary">Apply</button>
+  </div>
 </form>
 <div class="table-wrap">
   <table class="data">
-    <thead><tr><th>Name</th><th>Email</th><th>Plan</th><th>Joined</th></tr></thead>
+    <thead><tr><th>Name</th><th>Email</th><th>Company</th><th>CRM</th><th>Portal</th><th>Plan</th><th>Joined</th><th></th></tr></thead>
     <tbody>
       <% members.forEach(function (m) { %>
         <tr>
           <td><a href="/admin/members/<%= m.id %>"><%= m.full_name %></a></td>
           <td><%= m.email %></td>
+          <td><%= m.business_name || '—' %></td>
+          <td><%= m.crm_status ? String(m.crm_status).replace(/_/g, ' ') : '—' %></td>
+          <td><%= m.suspended_at ? 'Suspended' : 'OK' %></td>
           <td><%= m.tier_name || '—' %> (<%= m.plan_status || '—' %>)</td>
           <td><%= formatDate(m.created_at) %></td>
+          <td style="white-space:nowrap;">
+            <a class="btn btn-secondary" style="padding:4px 10px;font-size:12px;" href="/admin/members/<%= m.id %>/edit" title="Edit all fields">Edit</a>
+          </td>
         </tr>
       <% }); %>
     </tbody>

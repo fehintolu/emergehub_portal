@@ -1,29 +1,144 @@
-<% if (typeof query !== 'undefined' && query.msg) { %>
-  <div class="alert alert-success">Saved.</div>
-<% } %>
-<h2>Bank & Paystack</h2>
-<form method="post" action="/admin/settings">
-  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-  <div class="form-row"><label>Bank name</label><input name="bank_name" value="<%= map.bank_name || '' %>" /></div>
-  <div class="form-row"><label>Account name</label><input name="account_name" value="<%= map.account_name || '' %>" /></div>
-  <div class="form-row"><label>Account number</label><input name="account_number" value="<%= map.account_number || '' %>" /></div>
-  <div class="form-row"><label>Default invoice due days</label><input name="default_invoice_due_days" value="<%= map.default_invoice_due_days || '7' %>" /></div>
-  <div class="form-row"><label>Meeting room names (JSON array)</label><textarea name="meeting_room_names" rows="2"><%= map.meeting_room_names || '[]' %></textarea></div>
-  <div class="form-row"><label>Meeting room hours</label><textarea name="meeting_room_hours" rows="2"><%= map.meeting_room_hours || '' %></textarea></div>
-  <div class="form-row"><label>Paystack public key</label><input name="paystack_public_key" value="<%= map.paystack_public_key || '' %>" autocomplete="off" /></div>
-  <div class="form-row"><label>Paystack secret key</label><input type="password" name="paystack_secret_key" value="<%= map.paystack_secret_key || '' %>" autocomplete="new-password" placeholder="Leave blank to keep" /></div>
-  <button type="submit" class="btn btn-primary">Save settings</button>
-</form>
+<% var tab = typeof settingsTab !== 'undefined' ? settingsTab : 'general'; %>
+<div class="admin-settings">
+  <% if (typeof query !== 'undefined' && query.msg === '1') { %>
+    <div class="alert alert-success anim anim-1">Settings saved.</div>
+  <% } %>
+  <% if (typeof query !== 'undefined' && query.msg === 'test_created') { %>
+    <div class="alert alert-success anim anim-1">Test member account created. They can sign in immediately (email is pre-verified).</div>
+  <% } %>
+  <% if (typeof query !== 'undefined' && query.msg === 'test_flagged') { %>
+    <div class="alert alert-success anim anim-1">Member marked as a test account.</div>
+  <% } %>
+  <% if (typeof query !== 'undefined' && query.msg === 'purged') { %>
+    <div class="alert alert-success anim anim-1">
+      Purged transactional data for <%= query.n || 0 %> test account(s).<% if (query.skipped) { %> <%= query.skipped %> id(s) were skipped (not test accounts).<% } %>
+    </div>
+  <% } %>
+  <% if (typeof query !== 'undefined' && query.err === 'test_fields') { %>
+    <div class="alert alert-error anim anim-1">Fill name, email, phone, and a password of at least 8 characters.</div>
+  <% } %>
+  <% if (typeof query !== 'undefined' && query.err === 'test_dup') { %>
+    <div class="alert alert-error anim anim-1">That email is already registered.</div>
+  <% } %>
+  <% if (typeof query !== 'undefined' && query.err === 'test_create') { %>
+    <div class="alert alert-error anim anim-1">Could not create the account. Try again.</div>
+  <% } %>
+  <% if (typeof query !== 'undefined' && query.err === 'test_flag_missing') { %>
+    <div class="alert alert-error anim anim-1">No member found for that ID or email.</div>
+  <% } %>
+  <% if (typeof query !== 'undefined' && query.err === 'purge_none') { %>
+    <div class="alert alert-error anim anim-1">Select at least one test account to purge.</div>
+  <% } %>
+  <% if (typeof query !== 'undefined' && query.err === 'purge_failed') { %>
+    <div class="alert alert-error anim anim-1">Purge failed — nothing was committed. Check logs.</div>
+  <% } %>
 
-<h2>Admin users</h2>
-<ul><% admins.forEach(function (a) { %>
-  <li><%= a.username %> — <%= a.email %> — <%= a.active ? 'active' : 'off' %></li>
-<% }); %></ul>
-<h3>Add admin</h3>
-<form method="post" action="/admin/settings/admins">
-  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-  <input name="username" placeholder="username" required />
-  <input name="email" type="email" placeholder="email" required />
-  <input name="password" type="password" placeholder="password min 8" minlength="8" required />
-  <button type="submit" class="btn btn-secondary">Add</button>
-</form>
+  <nav class="admin-settings-tabs" aria-label="Settings sections">
+    <a href="/admin/settings" class="admin-settings-tab<%= tab === 'general' ? ' is-active' : '' %>">General</a>
+    <% if (typeof isSuperAdmin !== 'undefined' && isSuperAdmin) { %>
+      <a href="/admin/settings?tab=test-data" class="admin-settings-tab<%= tab === 'test-data' ? ' is-active' : '' %>">Test data</a>
+    <% } %>
+  </nav>
+
+  <% if (tab === 'general') { %>
+  <div class="admin-settings-panel card">
+    <p class="admin-settings-lead">
+      <a class="section-link" href="/admin/users">Admin users &amp; roles</a>
+      <% if (typeof isSuperAdmin !== 'undefined' && !isSuperAdmin) { %>
+        <span class="admin-settings-muted"> — super admin only</span>
+      <% } %>
+    </p>
+    <h2 class="admin-settings-heading">Bank &amp; Paystack</h2>
+    <% var _canSave = (typeof canMutate === 'undefined' || canMutate); %>
+    <% var _ro = _canSave ? '' : 'readonly'; %>
+    <form method="post" action="/admin/settings">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+      <div class="form-row"><label>Bank name</label><input name="bank_name" value="<%= map.bank_name || '' %>" <%= _ro %> /></div>
+      <div class="form-row"><label>Account name</label><input name="account_name" value="<%= map.account_name || '' %>" <%= _ro %> /></div>
+      <div class="form-row"><label>Account number</label><input name="account_number" value="<%= map.account_number || '' %>" <%= _ro %> /></div>
+      <div class="form-row"><label>Default invoice due days</label><input name="default_invoice_due_days" value="<%= map.default_invoice_due_days || '7' %>" <%= _ro %> /></div>
+      <div class="form-row"><label>Meeting room names (JSON array)</label><textarea name="meeting_room_names" rows="2" <%= _ro %>><%= map.meeting_room_names || '[]' %></textarea></div>
+      <div class="form-row"><label>Meeting room hours</label><textarea name="meeting_room_hours" rows="2" <%= _ro %>><%= map.meeting_room_hours || '' %></textarea></div>
+      <div class="form-row"><label>Paystack public key</label><input name="paystack_public_key" value="<%= map.paystack_public_key || '' %>" autocomplete="off" <%= _ro %> /></div>
+      <div class="form-row"><label>Paystack secret key</label><input type="password" name="paystack_secret_key" value="<%= map.paystack_secret_key || '' %>" autocomplete="new-password" placeholder="Leave blank to keep" <%= _ro %> /></div>
+      <% if (_canSave) { %>
+      <button type="submit" class="btn btn-primary">Save settings</button>
+      <% } else { %>
+      <p class="page-lead" style="margin:0;color:var(--text-secondary);">View-only — you cannot save portal settings.</p>
+      <% } %>
+    </form>
+  </div>
+  <% } %>
+
+  <% if (tab === 'test-data' && typeof isSuperAdmin !== 'undefined' && isSuperAdmin) { %>
+  <div class="admin-settings-panel card admin-settings-test">
+    <h2 class="admin-settings-heading">Test accounts</h2>
+    <p class="admin-settings-lead">
+      Test accounts are flagged in the database. <strong>Purge</strong> removes invoices, service requests, tickets, bookings, documents on disk, plans, credits, notifications, and activity — but keeps the member row (login, profile fields, password). Only accounts marked as test can be purged.
+    </p>
+
+    <div class="admin-settings-grid-2">
+      <div class="admin-settings-subcard">
+        <h3 class="admin-settings-subtitle">Create test member</h3>
+        <p class="admin-settings-muted">New portal login; email is verified automatically for faster QA.</p>
+        <form method="post" action="/admin/settings/test-account/create" class="admin-settings-form">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+          <div class="form-row"><label>Full name</label><input name="full_name" required autocomplete="name" /></div>
+          <div class="form-row"><label>Email</label><input name="email" type="email" required autocomplete="email" /></div>
+          <div class="form-row"><label>Phone</label><input name="phone" required autocomplete="tel" /></div>
+          <div class="form-row"><label>Password (min 8)</label><input name="password" type="password" minlength="8" required autocomplete="new-password" /></div>
+          <button type="submit" class="btn btn-primary">Create test account</button>
+        </form>
+      </div>
+      <div class="admin-settings-subcard">
+        <h3 class="admin-settings-subtitle">Mark existing member as test</h3>
+        <p class="admin-settings-muted">Use member UUID from the URL on their admin page, or their email.</p>
+        <form method="post" action="/admin/settings/test-account/flag" class="admin-settings-form">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+          <div class="form-row"><label>Member ID (UUID)</label><input name="member_id" placeholder="optional if email set" autocomplete="off" /></div>
+          <div class="form-row"><label>Email</label><input name="flag_email" type="email" placeholder="optional if ID set" autocomplete="email" /></div>
+          <button type="submit" class="btn btn-secondary">Flag as test account</button>
+        </form>
+      </div>
+    </div>
+
+    <h3 class="admin-settings-subtitle" style="margin-top:28px;">Purge data for selected test accounts</h3>
+    <% if (!testMembers || !testMembers.length) { %>
+      <p class="admin-settings-muted">No test accounts yet. Create one or flag an existing member.</p>
+    <% } else { %>
+      <form method="post" action="/admin/settings/test-purge" onsubmit="return confirm('Purge all transactional data for the selected test accounts? Member logins and profile text stay; invoices, requests, files, etc. are removed.');">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+        <div class="table-wrap">
+          <table class="data admin-settings-table">
+            <thead>
+              <tr>
+                <th style="width:36px;"></th>
+                <th>Member</th>
+                <th>Email</th>
+                <th>Invoices</th>
+                <th>Services</th>
+                <th>Tickets</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <% testMembers.forEach(function (m) { %>
+                <tr>
+                  <td><input type="checkbox" name="member_ids" value="<%= m.id %>" /></td>
+                  <td><strong><%= m.full_name %></strong></td>
+                  <td><%= m.email %></td>
+                  <td><%= m.invoice_count %></td>
+                  <td><%= m.sr_count %></td>
+                  <td><%= m.ticket_count %></td>
+                  <td><a href="/admin/members/<%= m.id %>">Open</a></td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+        <button type="submit" class="btn btn-secondary" style="margin-top:14px;border-color:var(--orange);color:var(--orange);">Purge selected</button>
+      </form>
+    <% } %>
+  </div>
+  <% } %>
+</div>

@@ -1,27 +1,30 @@
-<h2 style="margin-top:0;">Create member account</h2>
-<% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
-<form method="post" action="/auth/register">
+<h1 class="member-auth-h1">Create account</h1>
+<p class="member-auth-lead">Join EmergeHub to book workspace access, services, and meeting rooms.</p>
+<% if (error) { %><div class="alert alert-error member-auth-alert"><%= error %></div><% } %>
+<form method="post" action="/auth/register" class="member-auth-form">
   <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-  <div class="form-row">
-    <label for="full_name">Full name</label>
-    <input id="full_name" name="full_name" type="text" required value="<%= values.full_name || '' %>" />
+  <div class="member-auth-field">
+    <label class="member-auth-label" for="full_name">Full name</label>
+    <input class="member-auth-input" id="full_name" name="full_name" type="text" required autocomplete="name" value="<%= values.full_name || '' %>" placeholder="Your name" />
   </div>
-  <div class="form-row">
-    <label for="email">Email</label>
-    <input id="email" name="email" type="email" required value="<%= values.email || '' %>" />
+  <div class="member-auth-field">
+    <label class="member-auth-label" for="email">Email</label>
+    <input class="member-auth-input" id="email" name="email" type="email" required autocomplete="email" value="<%= values.email || '' %>" placeholder="you@company.com" />
   </div>
-  <div class="form-row">
-    <label for="phone">Phone</label>
-    <input id="phone" name="phone" type="tel" required value="<%= values.phone || '' %>" />
+  <div class="member-auth-field">
+    <label class="member-auth-label" for="phone">Phone</label>
+    <input class="member-auth-input" id="phone" name="phone" type="tel" required autocomplete="tel" value="<%= values.phone || '' %>" placeholder="+234 …" />
   </div>
-  <div class="form-row">
-    <label for="business_name">Business name (optional)</label>
-    <input id="business_name" name="business_name" type="text" value="<%= values.business_name || '' %>" />
+  <div class="member-auth-field">
+    <label class="member-auth-label" for="business_name">Business name <span class="member-auth-optional">(optional)</span></label>
+    <input class="member-auth-input" id="business_name" name="business_name" type="text" autocomplete="organization" value="<%= values.business_name || '' %>" placeholder="Company or brand" />
   </div>
-  <div class="form-row">
-    <label for="password">Password (min 8 characters)</label>
-    <input id="password" name="password" type="password" required minlength="8" autocomplete="new-password" />
+  <div class="member-auth-field">
+    <label class="member-auth-label" for="password">Password</label>
+    <input class="member-auth-input" id="password" name="password" type="password" required minlength="8" autocomplete="new-password" placeholder="At least 8 characters" />
   </div>
-  <button type="submit" class="btn btn-primary">Register</button>
+  <button type="submit" class="btn btn-primary member-auth-submit">Register</button>
 </form>
-<p><a href="/auth/login">Already have an account?</a></p>
+<div class="member-auth-links">
+  <a href="/auth/login">Already have an account? Sign in</a>
+</div>

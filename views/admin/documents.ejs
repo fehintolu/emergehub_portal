@@ -9,10 +9,14 @@
           <td><%= d.mime_type %></td>
           <td><%= formatDateTime(d.created_at) %></td>
           <td>
+            <% if (typeof canArchive !== 'undefined' && canArchive) { %>
             <form method="post" action="/admin/documents/<%= d.id %>/delete" onsubmit="return confirm('Delete?');" style="display:inline;">
               <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
               <button type="submit" class="link-btn">Delete</button>
             </form>
+            <% } else { %>
+              <span style="color:var(--text-muted);font-size:12px;">—</span>
+            <% } %>
           </td>
         </tr>
       <% }); %>

@@ -3,6 +3,8 @@ const { pool } = require('../lib/db');
 const { requireValidCsrf } = require('../lib/csrf');
 const { requireAdmin } = require('../middleware/adminAuth');
 const { adminLayoutLocals } = require('../middleware/adminLayoutLocals');
+const { restrictConsultantScope } = require('../middleware/consultantScope');
+const { blockViewerMutations, enforceViewerReadOnlyGet } = require('../lib/adminRbac');
 const { formatNgn, formatDate, formatDateTime } = require('../lib/format');
 const { onCapacityUnitFreed } = require('../lib/capacityWaitlist');
 const { syncUnitStatus } = require('../lib/capacityAssignment');
@@ -10,6 +12,9 @@ const { syncUnitStatus } = require('../lib/capacityAssignment');
 const router = express.Router();
 router.use(requireAdmin);
 router.use(adminLayoutLocals);
+router.use(restrictConsultantScope);
+router.use(enforceViewerReadOnlyGet);
+router.use(blockViewerMutations);
 
 function isUuid(s) {
   return (
@@ -18,59 +23,107 @@ function isUuid(s) {
   );
 }
 
-router.get('/space-utilization', async (req, res) => {
-  const summary = await pool.query(
-    `SELECT
-       COUNT(*) FILTER (WHERE su.deleted_at IS NULL)::int AS total_units,
-       COUNT(*) FILTER (WHERE su.deleted_at IS NULL AND su.status = 'occupied')::int AS occupied_units,
-       COUNT(*) FILTER (WHERE su.deleted_at IS NULL AND su.status = 'available')::int AS available_units,
-       COUNT(*) FILTER (WHERE su.deleted_at IS NULL AND su.status = 'maintenance')::int AS maintenance_units
-     FROM space_units su`
-  );
-  const unassigned = await pool.query(
-    `SELECT COUNT(DISTINCT sr.member_id)::int AS c
-     FROM service_requests sr
-     JOIN service_plans sp ON sp.id = sr.service_plan_id AND sp.deleted_at IS NULL AND sp.is_capacity_limited = true
-     JOIN invoices inv ON inv.id = sr.invoice_id AND inv.deleted_at IS NULL AND inv.status = 'paid'
-     WHERE sr.deleted_at IS NULL AND sr.status IN ('In Progress', 'Submitted', 'Under Review')
-       AND NOT EXISTS (
-         SELECT 1 FROM member_space_assignments msa
-         JOIN space_units su ON su.id = msa.unit_id AND su.deleted_at IS NULL
-         JOIN plan_capacity_profiles p ON p.id = su.profile_id AND p.service_plan_id = sp.id AND p.deleted_at IS NULL
-         WHERE msa.member_id = sr.member_id AND msa.deleted_at IS NULL AND msa.ended_at IS NULL
-       )`
-  );
-  const profiles = await pool.query(
-    `SELECT p.id, p.total_units, p.auto_assign, p.waitlist_enabled,
-            sp.title AS plan_title, s.name AS service_name,
-            (SELECT COUNT(*)::int FROM space_units su WHERE su.profile_id = p.id AND su.deleted_at IS NULL) AS unit_rows,
-            (SELECT COUNT(*)::int FROM space_units su WHERE su.profile_id = p.id AND su.deleted_at IS NULL AND su.status = 'occupied') AS occ_units
-     FROM plan_capacity_profiles p
-     LEFT JOIN service_plans sp ON sp.id = p.service_plan_id
-     LEFT JOIN services s ON s.id = sp.service_id
-     WHERE p.deleted_at IS NULL
-     ORDER BY s.sort_order, sp.sort_order`
-  );
-  const projection = await pool.query(
-    `SELECT g::date AS d,
-            (SELECT COUNT(*)::int FROM member_space_assignments msa
-             WHERE msa.deleted_at IS NULL AND msa.ended_at IS NULL
-               AND msa.ends_at IS NOT NULL AND msa.ends_at >= g::date AND msa.starts_at <= g::date) AS assigned
-     FROM generate_series(current_date::date, (current_date + 29)::date, interval '1 day') AS g`
-  );
-  res.render('admin/space-utilization', {
-    layout: 'layouts/admin',
-    title: 'Space utilization',
-    pageSub: 'Capacity, units, and assignments',
-    summary: summary.rows[0],
-    unassignedPaid: unassigned.rows[0].c,
-    profiles: profiles.rows,
-    projection: projection.rows,
-    formatDate,
-    formatDateTime,
-    formatNgn,
-    query: req.query,
-  });
+router.get('/space-utilization', async (req, res, next) => {
+  try {
+    const summary = await pool.query(
+      `SELECT
+         COUNT(*) FILTER (WHERE su.deleted_at IS NULL)::int AS total_units,
+         COUNT(*) FILTER (WHERE su.deleted_at IS NULL AND su.status = 'occupied')::int AS occupied_units,
+         COUNT(*) FILTER (WHERE su.deleted_at IS NULL AND su.status = 'available')::int AS available_units,
+         COUNT(*) FILTER (WHERE su.deleted_at IS NULL AND su.status = 'maintenance')::int AS maintenance_units
+       FROM space_units su`
+    );
+    const unassigned = await pool.query(
+      `SELECT COUNT(DISTINCT sr.member_id)::int AS c
+       FROM service_requests sr
+       JOIN service_plans sp ON sp.id = sr.service_plan_id AND sp.deleted_at IS NULL AND sp.is_capacity_limited = true
+       JOIN invoices inv ON inv.id = sr.invoice_id AND inv.deleted_at IS NULL AND inv.status = 'paid'
+       WHERE sr.deleted_at IS NULL AND sr.status IN ('In Progress', 'Submitted', 'Under Review')
+         AND NOT EXISTS (
+           SELECT 1 FROM member_space_assignments msa
+           JOIN space_units su ON su.id = msa.unit_id AND su.deleted_at IS NULL
+           JOIN plan_capacity_profiles p ON p.id = su.profile_id AND p.service_plan_id = sp.id AND p.deleted_at IS NULL
+           WHERE msa.member_id = sr.member_id AND msa.deleted_at IS NULL AND msa.ended_at IS NULL
+         )`
+    );
+    const profiles = await pool.query(
+      `SELECT p.id, p.total_units, p.auto_assign, p.waitlist_enabled,
+              sp.title AS plan_title, s.name AS service_name, sp.id AS plan_id,
+              (SELECT COUNT(*)::int FROM space_units su WHERE su.profile_id = p.id AND su.deleted_at IS NULL) AS unit_rows,
+              (SELECT COUNT(*)::int FROM space_units su WHERE su.profile_id = p.id AND su.deleted_at IS NULL AND su.status = 'occupied') AS occ_units,
+              (SELECT COUNT(*)::int FROM plan_waitlist_entries w
+               WHERE w.profile_id = p.id AND w.deleted_at IS NULL AND w.status = 'waiting') AS waitlist_count
+       FROM plan_capacity_profiles p
+       LEFT JOIN service_plans sp ON sp.id = p.service_plan_id
+       LEFT JOIN services s ON s.id = sp.service_id
+       WHERE p.deleted_at IS NULL
+       ORDER BY s.sort_order NULLS LAST, sp.sort_order NULLS LAST`
+    );
+    const capacityPlansMissingProfile = await pool.query(
+      `SELECT sp.id AS plan_id, sp.title AS plan_title, s.name AS service_name
+       FROM service_plans sp
+       JOIN services s ON s.id = sp.service_id
+       WHERE sp.deleted_at IS NULL AND sp.active = true AND sp.is_capacity_limited = true
+         AND NOT EXISTS (
+           SELECT 1 FROM plan_capacity_profiles p
+           WHERE p.service_plan_id = sp.id AND p.deleted_at IS NULL
+         )
+       ORDER BY s.sort_order, sp.sort_order`
+    );
+    const nonCapacityPlans = await pool.query(
+      `SELECT sp.id, sp.title AS plan_title, s.name AS service_name, sp.price_cents,
+         (SELECT COUNT(DISTINCT sr.member_id)::int
+          FROM service_requests sr
+          JOIN invoices inv ON inv.id = sr.invoice_id AND inv.deleted_at IS NULL AND inv.status = 'paid'
+          WHERE sr.service_plan_id = sp.id AND sr.deleted_at IS NULL
+            AND sr.status IN ('In Progress', 'Submitted', 'Under Review', 'Completed')
+         ) AS paid_member_touchpoints
+       FROM service_plans sp
+       JOIN services s ON s.id = sp.service_id
+       WHERE sp.deleted_at IS NULL AND sp.active = true AND sp.is_capacity_limited = false
+       ORDER BY s.sort_order, sp.sort_order`
+    );
+    const projection = await pool.query(
+      `SELECT g::date AS d,
+              (SELECT COUNT(*)::int FROM member_space_assignments msa
+               WHERE msa.deleted_at IS NULL AND msa.ended_at IS NULL
+                 AND msa.ends_at IS NOT NULL AND msa.ends_at >= g::date AND msa.started_at <= g::date) AS assigned
+       FROM generate_series(current_date::date, (current_date + 29)::date, interval '1 day') AS g`
+    );
+    const recentAssignments = await pool.query(
+      `SELECT msa.id, msa.started_at, msa.ends_at, msa.ended_at,
+              m.full_name AS member_name, m.email AS member_email,
+              su.label AS unit_label, sp.title AS plan_title, s.name AS service_name
+       FROM member_space_assignments msa
+       JOIN members m ON m.id = msa.member_id
+       JOIN space_units su ON su.id = msa.unit_id AND su.deleted_at IS NULL
+       JOIN plan_capacity_profiles p ON p.id = su.profile_id AND p.deleted_at IS NULL
+       LEFT JOIN service_plans sp ON sp.id = p.service_plan_id
+       LEFT JOIN services s ON s.id = sp.service_id
+       WHERE msa.deleted_at IS NULL
+       ORDER BY msa.created_at DESC
+       LIMIT 30`
+    );
+    res.render('admin/space-utilization', {
+      layout: 'layouts/admin',
+      title: 'Space utilization',
+      pageSub: 'Capacity, units, and assignments',
+      summary: summary.rows[0],
+      unassignedPaid: unassigned.rows[0].c,
+      profiles: profiles.rows,
+      capacityPlansMissingProfile: capacityPlansMissingProfile.rows,
+      nonCapacityPlans: nonCapacityPlans.rows,
+      projection: projection.rows,
+      recentAssignments: recentAssignments.rows,
+      formatDate,
+      formatDateTime,
+      formatNgn,
+      query: req.query,
+    });
+  } catch (e) {
+    console.error('[space-utilization]', e);
+    next(e);
+  }
 });
 
 router.get('/capacity/profiles/:id', async (req, res) => {

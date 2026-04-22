@@ -1,0 +1,14 @@
+<div class="kb-toolbar anim anim-1">
+  <% if (typeof kbMode === 'undefined' || kbMode !== 'screenshots') { %>
+    <a href="/help/screenshots" class="kb-toolbar-link">Screenshot checklist</a>
+    <span class="kb-toolbar-sep" aria-hidden="true">·</span>
+  <% } %>
+  <% if (typeof kbMode === 'undefined' || kbMode !== 'main') { %>
+    <a href="/help" class="kb-toolbar-link">Member guide</a>
+    <span class="kb-toolbar-sep" aria-hidden="true">·</span>
+  <% } %>
+  <a href="/dashboard" class="kb-toolbar-link">Back to dashboard</a>
+</div>
+<article class="kb-article card anim anim-2">
+  <%- contentHtml %>
+</article>

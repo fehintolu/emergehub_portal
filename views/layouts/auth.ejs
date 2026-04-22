@@ -2,13 +2,27 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title><%= title %> — EmergeHub Portal</title>
-  <link rel="stylesheet" href="/css/portal.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title><%= title %> — EmergeHub</title>
+  <link rel="stylesheet" href="/css/member-portal.css?v=<%= typeof memberPortalCssV !== 'undefined' ? memberPortalCssV : '' %>" />
 </head>
-<body class="portal-body" style="background: var(--color-panel);">
-  <div class="auth-card">
-    <%- body %>
+<body class="member-auth-page">
+  <div class="member-auth-layout">
+    <header class="member-auth-header" role="banner">
+      <div class="member-auth-logo-mark" aria-hidden="true">E</div>
+      <div class="member-auth-brand-block">
+        <div class="member-auth-brand-title">
+          <span class="member-auth-brand-emerge">Emerge</span><span class="member-auth-brand-hub">Hub</span>
+        </div>
+        <p class="member-auth-brand-sub">Member portal</p>
+      </div>
+    </header>
+    <main class="member-auth-main">
+      <div class="member-auth-card anim anim-1">
+        <%- body %>
+      </div>
+      <p class="member-auth-foot">Secure connection · EmergeHub</p>
+    </main>
   </div>
 </body>
 </html>

@@ -1,5 +1,9 @@
 <p class="page-lead anim anim-2" style="margin-top:0;">
-  <a href="/admin/members/<%= sr.member_id %>" class="section-link"><%= sr.member_name %></a>
+  <% if (isConsult) { %>
+    <strong><%= sr.member_name %></strong>
+  <% } else { %>
+    <a href="/admin/members/<%= sr.member_id %>" class="section-link"><%= sr.member_name %></a>
+  <% } %>
   · <%= sr.member_email %>
 </p>
 
@@ -12,6 +16,10 @@
 <% if (typeof query !== 'undefined' && query.err === 'complete_date') { %>
   <div class="alert alert-error anim anim-2">Completed status requires valid service start and end dates (end on or after start).</div>
 <% } %>
+<% if (typeof query !== 'undefined' && query.err === 'upload') { %>
+  <div class="alert alert-error anim anim-2">Attachment could not be uploaded (type or size).</div>
+<% } %>
+<% var isConsult = typeof isConsultant !== 'undefined' && isConsultant; %>
 
 <div class="card anim anim-2">
   <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;">
@@ -29,6 +37,7 @@
   </div>
 <% } %>
 
+<% if (!isConsult) { %>
 <div class="card anim anim-3" style="border-left:4px solid var(--accent);">
   <h3 style="margin-top:0;">Invoices</h3>
   <% if (!requestInvoices || !requestInvoices.length) { %>
@@ -63,6 +72,7 @@
     <button type="submit" class="btn btn-primary">Create invoice</button>
   </form>
 </div>
+<% } %>
 
 <div class="two-col anim anim-3" style="margin-top:8px;">
   <div class="col-left card">
@@ -108,6 +118,7 @@
     })();
     </script>
   </div>
+  <% if (!isConsult) { %>
   <div class="col-right card">
     <h3>Assign</h3>
     <form method="post" action="/admin/service-requests/<%= sr.id %>/assign">
@@ -124,6 +135,7 @@
       <button type="submit" class="btn btn-secondary">Save assignment</button>
     </form>
   </div>
+  <% } %>
 </div>
 
 <div class="card anim anim-4">
@@ -141,11 +153,15 @@
     <div class="card" style="background:var(--surface-2);margin-bottom:12px;">
       <small style="color:var(--text-secondary);"><%= m.sender_type %></small>
       <p style="margin-top:8px;"><%= m.body %></p>
+      <% if (m.attachment_name && m.attachment_document_id) { %>
+        <p style="margin-top:8px;font-size:13px;"><a href="/admin/documents/download/<%= m.attachment_document_id %>" class="section-link">Attachment: <%= m.attachment_name %></a></p>
+      <% } %>
     </div>
   <% }); %>
-  <form method="post" action="/admin/service-requests/<%= sr.id %>/message" style="margin-top:16px;">
+  <form method="post" action="/admin/service-requests/<%= sr.id %>/message" enctype="multipart/form-data" style="margin-top:16px;">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-    <div class="form-row"><label>Message member</label><textarea name="body" required rows="3"></textarea></div>
+    <div class="form-row"><label>Message member</label><textarea name="body" rows="3" placeholder="Message text (required unless you only attach a file)"></textarea></div>
+    <div class="form-row"><label>Attachment (optional)</label><input type="file" name="attachment" /></div>
     <button type="submit" class="btn btn-primary">Send to member</button>
   </form>
 </div>

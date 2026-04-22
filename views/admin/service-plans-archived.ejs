@@ -1,0 +1,70 @@
+<% 
+  function accessLabel(p) {
+    if (p.duration_value && p.duration_unit) return p.duration_value + ' ' + p.duration_unit;
+    return '—';
+  }
+%>
+<div class="admin-plans">
+  <div class="pl-topbar">
+    <div class="pl-breadcrumb">
+      <a class="pl-back" href="/admin/catalog/<%= svc.id %>/plans" title="Active plans" aria-label="Back">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 2L4 6l4 4"/></svg>
+      </a>
+      <div class="pl-bc-path">
+        <a class="pl-bc-link" href="/admin/catalog">Catalogue</a>
+        <span class="pl-bc-sep">›</span>
+        <a class="pl-bc-link" href="/admin/catalog/<%= svc.id %>/plans"><%= svc.name %></a>
+        <span class="pl-bc-sep">›</span>
+        <span class="pl-bc-current">Archived plans</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="pl-hero">
+    <h1 class="pl-title">Archived plans</h1>
+    <p class="pl-lead">Plans removed from the catalogue — restore to make them available again.</p>
+  </div>
+
+  <% if (msg === 'archived') { %><div class="pl-alert pl-alert--ok">Plan archived.</div><% } %>
+
+  <% if (!plans.length) { %>
+    <div class="pl-empty">
+      <p>No archived plans for this service.</p>
+      <a class="pl-btn-ghost" href="/admin/catalog/<%= svc.id %>/plans">Back to active plans</a>
+    </div>
+  <% } else { %>
+    <div class="pl-table-wrap">
+      <table class="pl-table">
+        <thead>
+          <tr>
+            <th>Plan</th>
+            <th>Price</th>
+            <th>Access window</th>
+            <th class="pl-th-actions"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% plans.forEach(function (p) { %>
+            <tr>
+              <td>
+                <div class="pl-cell-title"><%= p.title %></div>
+              </td>
+              <td class="pl-mono"><%= formatNgn(p.price_cents) %></td>
+              <td><%= accessLabel(p) %></td>
+              <td class="pl-actions">
+                <% if (typeof canArchive !== 'undefined' && canArchive) { %>
+                  <form method="post" action="/admin/catalog/<%= svc.id %>/plans/<%= p.id %>/restore" style="display:inline;">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                    <button type="submit" class="pl-link-edit" style="background:none;border:none;cursor:pointer;font:inherit;padding:0;">Restore</button>
+                  </form>
+                <% } else { %>
+                  <span class="pl-muted">Super admin</span>
+                <% } %>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
+</div>

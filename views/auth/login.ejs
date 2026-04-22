@@ -1,17 +1,21 @@
-<h2 style="margin-top:0;">Member sign in</h2>
-<% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
-<form method="post" action="/auth/login">
+<h1 class="member-auth-h1">Sign in</h1>
+<p class="member-auth-lead">Welcome back. Use your member email and password.</p>
+<% if (error) { %><div class="alert alert-error member-auth-alert"><%= error %></div><% } %>
+<form method="post" action="/auth/login" class="member-auth-form">
   <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
   <input type="hidden" name="next" value="<%= next %>" />
-  <div class="form-row">
-    <label for="email">Email</label>
-    <input id="email" name="email" type="email" required autocomplete="username" />
+  <div class="member-auth-field">
+    <label class="member-auth-label" for="email">Email</label>
+    <input class="member-auth-input" id="email" name="email" type="email" required autocomplete="username" placeholder="you@company.com" />
   </div>
-  <div class="form-row">
-    <label for="password">Password</label>
-    <input id="password" name="password" type="password" required autocomplete="current-password" />
+  <div class="member-auth-field">
+    <label class="member-auth-label" for="password">Password</label>
+    <input class="member-auth-input" id="password" name="password" type="password" required autocomplete="current-password" placeholder="••••••••" />
   </div>
-  <button type="submit" class="btn btn-primary">Sign in</button>
+  <button type="submit" class="btn btn-primary member-auth-submit">Sign in</button>
 </form>
-<p><a href="/auth/forgot-password">Forgot password?</a></p>
-<p>No account? <a href="/auth/register">Register</a></p>
+<div class="member-auth-links">
+  <a href="/auth/forgot-password">Forgot password?</a>
+  <span class="member-auth-links-sep">·</span>
+  <a href="/auth/register">Create an account</a>
+</div>

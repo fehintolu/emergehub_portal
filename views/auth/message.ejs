@@ -1,5 +1,5 @@
-<h2 style="margin-top:0;"><%= title %></h2>
-<p><%= message %></p>
+<h1 class="member-auth-h1"><%= title %></h1>
+<p class="member-auth-lead"><%= message %></p>
 <% if (typeof link !== 'undefined' && link) { %>
-  <p><a class="btn btn-primary" href="<%= link %>"><%= linkLabel || 'Continue' %></a></p>
+  <a class="btn btn-primary member-auth-submit" style="display:inline-flex;justify-content:center;text-decoration:none;width:100%;box-sizing:border-box;margin-top:0.5rem;" href="<%= link %>"><%= linkLabel || 'Continue' %></a>
 <% } %>

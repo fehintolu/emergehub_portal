@@ -1,156 +1,919 @@
-<% if (typeof query !== 'undefined' && query.msg === 'credits') { %>
-  <div class="alert alert-success anim anim-1">Meeting credits updated.</div>
+<% 
+  var initials = '?';
+  var parts = String(m.full_name || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length) {
+    initials = (parts[0].slice(0, 1) + (parts.length > 1 ? parts[parts.length - 1].slice(0, 1) : '')).toUpperCase();
+  }
+  function planDateInput(d) {
+    if (!d) return '';
+    var x = d instanceof Date ? d : new Date(d);
+    if (Number.isNaN(x.getTime())) return '';
+    return x.toISOString().slice(0, 10);
+  }
+  var hubMonthLabel = typeof creditHeroSubtitle !== 'undefined' && creditHeroSubtitle
+    ? creditHeroSubtitle
+    : '';
+  var usedMin = creditSummary ? Number(creditSummary.used) || 0 : 0;
+  var grantMin = creditSummary ? Number(creditSummary.granted) || 0 : 0;
+  var pctBar = grantMin > 0 ? Math.min(100, Math.round((usedMin / grantMin) * 100)) : 0;
+%>
+<% if (typeof query !== 'undefined' && query.msg === 'notify') { %>
+  <div class="alert alert-success anim anim-1">Notification sent (in-app; email/SMS if selected).</div>
 <% } %>
-<% if (typeof query !== 'undefined' && query.err === 'credits') { %>
-  <div class="alert alert-error anim anim-1">Enter a non-zero adjustment for granted or used minutes.</div>
+<% if (typeof query !== 'undefined' && query.msg === 'profile_saved') { %>
+  <div class="alert alert-success anim anim-1">Member details saved.</div>
 <% } %>
-<% if (typeof query !== 'undefined' && query.err === 'credits_save') { %>
-  <div class="alert alert-error anim anim-1">Could not save credit adjustment.</div>
+<% if (typeof query !== 'undefined' && query.msg === 'plan_saved') { %>
+  <div class="alert alert-success anim anim-1">Plan assignment saved. Previous active row was archived in history.</div>
+<% } %>
+<% if (typeof query !== 'undefined' && query.err === 'plan_invalid') { %>
+  <div class="alert alert-error anim anim-1">Choose a valid Core Workspace plan from the catalogue.</div>
+<% } %>
+<% if (typeof query !== 'undefined' && query.err === 'plan_tier') { %>
+  <div class="alert alert-error anim anim-1">Could not link that catalogue plan to membership. Check the database or try again.</div>
+<% } %>
+<% if (typeof query !== 'undefined' && query.msg === 'plan_removed') { %>
+  <div class="alert alert-success anim anim-1">Active plan removed (soft-deleted). Assign a new plan when ready.</div>
+<% } %>
+<% if (typeof query !== 'undefined' && query.msg === 'plan_activated') { %>
+  <div class="alert alert-success anim anim-1">Pending workspace plan activated with the access start you chose.</div>
+<% } %>
+<% if (typeof query !== 'undefined' && query.err === 'activate_start') { %>
+  <div class="alert alert-error anim anim-1">Choose a valid access start date and time to activate that plan.</div>
+<% } %>
+<% if (typeof query !== 'undefined' && (query.err === 'activate_failed' || query.err === 'activate_invoice')) { %>
+  <div class="alert alert-error anim anim-1">Could not activate that plan. Ensure the linked invoice is paid and try again.</div>
+<% } %>
+<% if (typeof query !== 'undefined' && query.msg === 'credit_granted') { %>
+  <div class="alert alert-success anim anim-1">Meeting room credits added for the selected month.</div>
+<% } %>
+<% if (typeof query !== 'undefined' && query.err === 'credit_period') { %>
+  <div class="alert alert-error anim anim-1">Choose a valid calendar month for the credit grant.</div>
+<% } %>
+<% if (typeof query !== 'undefined' && (query.err === 'credit_grant' || query.err === 'credit_member')) { %>
+  <div class="alert alert-error anim anim-1">Could not add credits. Check the amount (1–<%= typeof maxManualCreditMinutes !== 'undefined' ? maxManualCreditMinutes : 43200 %> minutes) and try again.</div>
 <% } %>
 
-<div class="card anim anim-1">
-  <p class="page-lead" style="margin:0 0 8px;"><%= m.email %> · <%= m.phone %></p>
-  <p class="page-lead" style="margin:0;">Joined <%= formatDate(m.created_at) %> <% if (m.suspended_at) { %><span class="badge badge-warn">Suspended</span><% } %></p>
-</div>
-
-<div class="card anim anim-2">
-  <div class="section-header">
-    <span class="section-title">Internal notes</span>
+<div class="admin-member-detail">
+  <div class="amd-topbar">
+    <div class="amd-breadcrumb">
+      <a class="amd-bc-back" href="/admin/members" title="Back to members" aria-label="Back">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 2L4 6l4 4"/></svg>
+      </a>
+      <div class="amd-bc-path">
+        <a class="amd-bc-link" href="/admin/members">Members</a>
+        <span class="amd-bc-sep">›</span>
+        <span class="amd-bc-current"><%= m.full_name %></span>
+      </div>
+    </div>
+    <div class="amd-topbar-right">
+      <% if (!m.suspended_at) { %>
+        <form method="post" action="/admin/members/<%= m.id %>/suspend" style="display:inline" onsubmit="return confirm('Suspend this account?');">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+          <button type="submit" class="amd-btn-danger-outline">Suspend account</button>
+        </form>
+      <% } else { %>
+        <form method="post" action="/admin/members/<%= m.id %>/reactivate" style="display:inline">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+          <button type="submit" class="amd-btn-primary">Reactivate</button>
+        </form>
+      <% } %>
+      <a class="amd-btn-primary" href="/admin/members/<%= m.id %>/edit">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 2l2 2-6 6H4v-2L8 2z"/></svg>
+        Edit details
+      </a>
+      <a class="amd-btn-primary" href="/admin/invoices/new?member_id=<%= m.id %>">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2v8M2 6h8"/></svg>
+        New invoice
+      </a>
+    </div>
   </div>
-  <form method="post" action="/admin/members/<%= m.id %>/note">
-    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-    <div class="form-row"><label>Notes</label><textarea name="internal_notes"><%= m.internal_notes || '' %></textarea></div>
-    <button type="submit" class="btn btn-secondary">Save notes</button>
-  </form>
-</div>
 
-<div class="cta-row">
-  <% if (!m.suspended_at) { %>
-    <form method="post" action="/admin/members/<%= m.id %>/suspend" onsubmit="return confirm('Suspend?');">
-      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-      <button type="submit" class="btn btn-ghost">Suspend</button>
-    </form>
-  <% } else { %>
-    <form method="post" action="/admin/members/<%= m.id %>/reactivate">
-      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-      <button type="submit" class="btn btn-primary">Reactivate</button>
-    </form>
-  <% } %>
-</div>
+  <div class="amd-page-layout">
+    <div class="amd-left-col">
+      <div class="amd-card">
+        <div class="amd-profile-hero">
+          <div class="amd-profile-top">
+            <div class="amd-profile-avatar"><%= initials %></div>
+            <div>
+              <div class="amd-profile-name"><%= m.full_name %></div>
+              <div class="amd-profile-role">Member record</div>
+              <% if (planExpiresAt) { %>
+                <div class="amd-plan-expiry">Plan renews / expires <strong><%= planExpiresAt %></strong></div>
+              <% } else if (activePlan && !activePlan.renewal_at) { %>
+                <div class="amd-plan-expiry">No renewal date set for the current plan</div>
+              <% } %>
+            </div>
+          </div>
+          <div class="amd-profile-badges">
+            <% if (!m.suspended_at) { %>
+              <span class="amd-p-badge amd-pb-active">Active</span>
+            <% } else { %>
+              <span class="amd-p-badge amd-pb-warn">Suspended</span>
+            <% } %>
+            <% if (activePlan && (activePlan.catalogue_plan_title || activePlan.tier_name || activePlan.name)) { %>
+              <span class="amd-p-badge amd-pb-plan"><% if (activePlan.catalogue_service_name && activePlan.catalogue_plan_title) { %><%= activePlan.catalogue_service_name %> — <%= activePlan.catalogue_plan_title %><% } else { %><%= activePlan.catalogue_plan_title || activePlan.tier_name || activePlan.name %><% } %></span>
+            <% } %>
+            <span class="amd-p-badge amd-pb-joined">Joined <%= formatDate(m.created_at) %></span>
+          </div>
+          <div class="amd-profile-contact">
+            <div class="amd-contact-row">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="3" width="10" height="7" rx="1.5"/><path d="M1 4l5 4 5-4"/></svg>
+              <%= m.email %>
+            </div>
+            <% if (m.phone) { %>
+              <div class="amd-contact-row">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 7.5c0 .8-.6 1.5-1.4 1.5-3.9 0-7-3.1-7-7 0-.8.7-1.5 1.5-1.5.2 0 .4 0 .6.1L5 3.5c.1.3 0 .6-.2.8L4 5c.7 1.3 1.7 2.3 3 3l.7-.8c.2-.2.5-.3.8-.2l2.4 1.3c.1.1.1.1.1.2z"/></svg>
+                <%= m.phone %>
+              </div>
+            <% } %>
+            <% if (m.mobile_phone) { %>
+              <div class="amd-contact-row" style="font-size:12px;color:var(--text-muted);">Mobile: <%= m.mobile_phone %></div>
+            <% } %>
+            <% if (m.business_name) { %>
+              <div class="amd-contact-row" style="font-size:12px;">Company: <%= m.business_name %></div>
+            <% } %>
+            <% if (m.billing_state || m.billing_country) { %>
+              <div class="amd-contact-row" style="font-size:12px;color:var(--text-muted);">Billing: <%= [m.billing_state, m.billing_country].filter(Boolean).join(', ') %></div>
+            <% } %>
+          </div>
+        </div>
+      </div>
 
-<div class="card anim anim-2">
-  <div class="section-header">
-    <span class="section-title">Meeting room credits (ledger)</span>
+      <div class="amd-card">
+        <div class="amd-card-hd">
+          <div class="amd-card-title">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 10l4-7 3 5 2-3 4 5"/></svg>
+            Account summary
+          </div>
+        </div>
+        <div class="amd-card-body">
+          <div class="amd-account-grid">
+            <div class="amd-acc-stat">
+              <div class="amd-acc-label">Outstanding</div>
+              <div class="amd-acc-value amd-acc-red"><%= formatNgn(accountOutstandingCents) %></div>
+              <div class="amd-acc-sub"><%= unpaidInvoiceCount %> unpaid invoice<%= unpaidInvoiceCount === 1 ? '' : 's' %></div>
+            </div>
+            <div class="amd-acc-stat">
+              <div class="amd-acc-label">Total paid</div>
+              <div class="amd-acc-value amd-acc-green"><%= formatNgn(totalPaidCents) %></div>
+              <div class="amd-acc-sub">All time</div>
+            </div>
+            <div class="amd-acc-stat">
+              <div class="amd-acc-label">Service requests</div>
+              <div class="amd-acc-value"><%= svc.length %></div>
+              <div class="amd-acc-sub"><%= svcSubmitted %> submitted<% if (svcComplete) { %>, <%= svcComplete %> complete<% } %></div>
+            </div>
+            <div class="amd-acc-stat">
+              <div class="amd-acc-label">Room bookings</div>
+              <div class="amd-acc-value amd-acc-amber"><%= roomBookings.length %></div>
+              <div class="amd-acc-sub"><%= rbPending %> pending<% if (rbCancelled) { %>, <%= rbCancelled %> cancelled<% } %></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="amd-card">
+        <div class="amd-card-hd">
+          <div class="amd-card-title">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="2" width="12" height="10" rx="1.5"/><path d="M3 2V1M11 2V1M1 5.5h12"/></svg>
+            Meeting room credits
+          </div>
+          <% if (hubMonthLabel) { %><span class="amd-card-meta"><%= hubMonthLabel %></span><% } %>
+        </div>
+        <div class="amd-card-body">
+          <div class="amd-credits-head">
+            <span>Used (this period)</span>
+            <span class="amd-credits-big">
+              <%= (usedMin / 60).toFixed(1) %> / <%= grantMin > 0 ? (grantMin / 60).toFixed(1) : '0' %> hrs
+            </span>
+          </div>
+          <div class="amd-credits-bar-wrap">
+            <div class="amd-credits-bar-bg">
+              <div class="amd-credits-bar-fill" style="width:<%= pctBar %>%"></div>
+            </div>
+            <div class="amd-credits-meta">
+              <span><%= grantMin <= 0 ? 'No allowance on current plan' : (usedMin + ' min used of ' + grantMin + ' min') %></span>
+              <span><% if (typeof creditExpiresLabel !== 'undefined' && creditExpiresLabel) { %>Credits through <%= creditExpiresLabel %><% } else { %>Resets <%= creditResetLabel %><% } %></span>
+            </div>
+            <% if (typeof creditPeriodExplain === 'string' && creditPeriodExplain) { %>
+            <p class="amd-page-lead" style="margin:8px 0 0;font-size:11px;color:var(--text-muted);"><%= creditPeriodExplain %></p>
+            <% } %>
+          </div>
+          <% if (creditLedger && creditLedger.length) { %>
+            <div class="amd-divider"></div>
+            <p class="amd-page-lead" style="margin:0;font-size:12px;">Recent ledger: <% creditLedger.slice(0,3).forEach(function(row, i) { %>
+              <% var expL = row.pool_expires_on ? formatDate(row.pool_expires_on) : formatDate(row.period_month); %>
+              <%= expL %> — <%= row.granted_minutes %> granted / <%= row.used_minutes %> used<% if (i < Math.min(2, creditLedger.length - 1)) { %> · <% } %>
+            <% }); %></p>
+          <% } %>
+          <% if (typeof isSuperAdmin !== 'undefined' && isSuperAdmin) { %>
+            <div class="amd-divider"></div>
+            <div class="amd-credit-manual">
+              <div class="amd-credit-manual-title">
+                <span>Manual credit</span>
+                <span class="amd-p-badge amd-pb-plan" style="font-size:10px;">Super admin</span>
+              </div>
+              <p class="amd-credit-manual-lead">Add minutes to the <strong>current credit pool</strong> (same period as plan renewal or calendar month). Set when those minutes expire — the later date wins if you extend.</p>
+              <form id="amd-form-credit-grant" method="post" action="/admin/members/<%= m.id %>/meeting-credits/grant" class="amd-credit-manual-form" data-member-name="<%= encodeURIComponent(m.full_name || 'Member') %>">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                <div class="amd-credit-manual-grid">
+                  <label class="amd-field-row amd-credit-manual-field">
+                    <span class="amd-field-label">Minutes</span>
+                    <input class="amd-field-input" type="number" name="minutes" id="amd-credit-minutes" required min="1" max="<%= typeof maxManualCreditMinutes !== 'undefined' ? maxManualCreditMinutes : 43200 %>" step="1" placeholder="e.g. 120" />
+                  </label>
+                  <label class="amd-field-row amd-credit-manual-field">
+                    <span class="amd-field-label">Credits expire on</span>
+                    <input class="amd-field-input" type="date" name="expires_on" id="amd-credit-expires" value="<%= typeof creditExpiresOnInput !== 'undefined' ? creditExpiresOnInput : '' %>" required />
+                  </label>
+                </div>
+                <label class="amd-field-row" style="margin-top:8px;">
+                  <span class="amd-field-label">Note (optional)</span>
+                  <input class="amd-field-input" type="text" name="note" id="amd-credit-note" maxlength="400" placeholder="Reason for audit trail" autocomplete="off" />
+                </label>
+                <button type="button" class="amd-btn-sm amd-btn-sm-outline amd-credit-manual-btn" id="amd-credit-open-modal">Add credits…</button>
+              </form>
+            </div>
+          <% } %>
+        </div>
+      </div>
+
+      <div class="amd-card">
+        <div class="amd-card-hd">
+          <div class="amd-card-title">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="2" width="12" height="10" rx="1.5"/><path d="M4 5.5h6M4 8h4"/></svg>
+            Plan assignment
+          </div>
+        </div>
+        <div class="amd-card-body">
+          <% if (!bookableServices || !bookableServices.length) { %>
+            <p class="amd-page-lead" style="margin:0 0 12px;font-size:12px;color:var(--text-muted);">No Core Workspace catalogue services with active plans. Add services and plans under Admin → Catalog (Core Workspace, plan booking).</p>
+          <% } %>
+          <form id="amd-plan-form" method="post" action="/admin/members/<%= m.id %>/plan" class="amd-plan-assign-form">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <div class="amd-field-row">
+              <label class="amd-field-label">Service</label>
+              <select class="amd-field-select" name="assign_service_id" id="amd-plan-service" <%= !bookableServices || !bookableServices.length ? 'disabled' : '' %>>
+                <option value="">Select a service</option>
+                <% (bookableServices || []).forEach(function (svc) { %>
+                  <% var pls = (plansByService && plansByService[svc.id]) ? plansByService[svc.id] : []; %>
+                  <option value="<%= svc.id %>" data-has-plans="<%= pls.length ? '1' : '0' %>" <%= assignPlanSelection && String(assignPlanSelection.serviceId) === String(svc.id) ? 'selected' : '' %>><%= svc.name %></option>
+                <% }); %>
+              </select>
+            </div>
+            <div class="amd-field-row">
+              <label class="amd-field-label">Plan</label>
+              <select class="amd-field-select" name="service_plan_id" id="amd-plan-catalogue" required <%= !bookableServices || !bookableServices.length ? 'disabled' : '' %>>
+                <option value="">Select a plan</option>
+              </select>
+            </div>
+            <p class="amd-page-lead" style="margin:0 0 12px;font-size:11px;color:var(--text-muted);">Uses the same Core Workspace catalogue as members on <strong>My Workspace</strong>. Meeting credits, weekly visits, and other plan allowances follow the selected catalogue plan.</p>
+            <div class="amd-form-row">
+              <div class="amd-field-row">
+                <label class="amd-field-label">Started</label>
+                <input class="amd-field-input" type="date" name="started_at" id="amd-plan-started" value="<%= activePlan ? planDateInput(activePlan.started_at) : '' %>" />
+              </div>
+              <div class="amd-field-row">
+                <label class="amd-field-label">Renewal</label>
+                <input class="amd-field-input" type="date" name="renewal_at" id="amd-plan-renewal" value="<%= activePlan && activePlan.renewal_at ? planDateInput(activePlan.renewal_at) : '' %>" />
+              </div>
+            </div>
+            <div class="amd-field-row">
+              <label class="amd-field-label">Status</label>
+              <select class="amd-field-select" name="status" id="amd-plan-status">
+                <% ['active','suspended','pending_renewal','expired'].forEach(function (st) { %>
+                  <option value="<%= st %>" <%= activePlan && activePlan.status === st ? 'selected' : (!activePlan && st === 'active' ? 'selected' : '') %>><%= st.replace(/_/g, ' ') %></option>
+                <% }); %>
+              </select>
+            </div>
+            <button type="button" class="amd-btn-sm amd-btn-sm-primary amd-btn-block" id="amd-plan-open-modal">Review &amp; save plan</button>
+          </form>
+          <% if (typeof canArchive !== 'undefined' && canArchive && activePlan) { %>
+            <form method="post" action="/admin/members/<%= m.id %>/plan/remove" id="amd-remove-plan-form" style="margin-top:12px;">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+              <button type="button" class="amd-btn-sm amd-btn-danger-outline amd-btn-block" id="amd-remove-plan-open">Remove active plan…</button>
+            </form>
+            <p class="amd-page-lead" style="margin:8px 0 0;font-size:11px;color:var(--text-muted);">Super admin only. Soft-deletes the active membership row (member loses plan until reassigned).</p>
+          <% } %>
+        </div>
+      </div>
+
+      <% if (typeof planHistory !== 'undefined' && planHistory.length) { %>
+      <div class="amd-card">
+        <div class="amd-card-hd">
+          <div class="amd-card-title">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 3h10v9H2z"/><path d="M4 1v4M10 1v4"/></svg>
+            Plan history
+          </div>
+        </div>
+        <div class="amd-card-body" style="padding-top:0;">
+          <div class="amd-table-wrap">
+            <table class="amd-mini-table">
+              <thead>
+                <tr>
+                  <th>Plan</th>
+                  <th>Status</th>
+                  <th>Started</th>
+                  <th>Renewal</th>
+                  <th>Ended / removed</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <% planHistory.forEach(function (row) { %>
+                  <tr class="<%= row.deleted_at ? 'amd-tr-muted' : '' %>">
+                    <td>
+                      <% if (row.catalogue_service_name && row.catalogue_plan_title) { %><%= row.catalogue_service_name %> — <%= row.catalogue_plan_title %><% } else { %><%= row.tier_name || '—' %><% } %>
+                      <% if (row.source_invoice_number) { %><div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Invoice <%= row.source_invoice_number %></div><% } %>
+                    </td>
+                    <td>
+                      <span class="amd-pill <%= row.status === 'active' && !row.deleted_at ? 'amd-pill--ok' : 'amd-pill--muted' %>"><%= String(row.status || '').replace(/_/g, ' ') %></span>
+                      <% if (row.deleted_at) { %><span class="amd-pill amd-pill--warn" style="margin-left:4px;">removed</span><% } %>
+                    </td>
+                    <td><%= row.started_at ? formatDate(row.started_at) : '—' %></td>
+                    <td><%= row.renewal_at ? formatDate(row.renewal_at) : '—' %></td>
+                    <td><%= row.deleted_at ? formatDateTime(row.deleted_at) : '—' %></td>
+                    <td style="vertical-align:top;min-width:200px;">
+                      <% if (!row.deleted_at && row.status === 'pending_activation') { %>
+                        <form method="post" action="/admin/members/<%= m.id %>/workspace-plan/activate" class="amd-pending-activate-form" style="display:flex;flex-direction:column;gap:6px;align-items:stretch;">
+                          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                          <input type="hidden" name="member_plan_id" value="<%= row.id %>" />
+                          <label style="font-size:11px;color:var(--text-muted);">Access start</label>
+                          <input class="amd-field-input" type="datetime-local" name="access_starts_at" required />
+                          <button type="submit" class="amd-btn-sm amd-btn-sm-primary">Activate</button>
+                        </form>
+                      <% } %>
+                    </td>
+                  </tr>
+                <% }); %>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <% } %>
+
+      <div class="amd-card">
+        <div class="amd-card-hd">
+          <div class="amd-card-title">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 2h10v8l-3 2H2V2z"/><path d="M4 5h6M4 7.5h4"/></svg>
+            Internal notes
+          </div>
+        </div>
+        <div class="amd-card-body">
+          <form method="post" action="/admin/members/<%= m.id %>/note">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <textarea class="amd-notes-textarea" name="internal_notes" placeholder="Private notes — not visible to the member"><%= m.internal_notes || '' %></textarea>
+            <button type="submit" class="amd-btn-sm amd-btn-sm-primary" style="margin-top:8px">Save notes</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="amd-right-col">
+      <div class="amd-tab-nav">
+        <button type="button" class="amd-tab-btn active" data-tab="overview">Overview</button>
+        <button type="button" class="amd-tab-btn" data-tab="bookings">Bookings <span class="amd-tab-count"><%= roomBookings.length %></span></button>
+        <button type="button" class="amd-tab-btn" data-tab="services">Services <span class="amd-tab-count"><%= svc.length %></span></button>
+        <button type="button" class="amd-tab-btn" data-tab="invoices">Invoices <span class="amd-tab-count"><%= inv.length %></span></button>
+        <button type="button" class="amd-tab-btn" data-tab="docs">Documents</button>
+        <button type="button" class="amd-tab-btn" data-tab="notify">Notify</button>
+      </div>
+
+      <div class="amd-tab-content active" id="amd-tab-overview">
+        <div class="amd-quick-actions">
+          <a class="amd-quick-card" href="/admin/meeting-rooms/bookings?member_id=<%= m.id %>">
+            <div class="amd-qc-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v4M11 1v4M2 7h12"/></svg></div>
+            <div class="amd-qc-title">Book a room</div>
+            <div class="amd-qc-sub">Open manual booking with this member prefilled</div>
+          </a>
+          <a class="amd-quick-card" href="/admin/service-requests">
+            <div class="amd-qc-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 5v4l2 2"/></svg></div>
+            <div class="amd-qc-title">Service requests</div>
+            <div class="amd-qc-sub">View and manage requests (filter by member in list)</div>
+          </a>
+          <a class="amd-quick-card" href="/admin/invoices/new?member_id=<%= m.id %>">
+            <div class="amd-qc-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M2 7h12M5 10h2M9 10h2"/></svg></div>
+            <div class="amd-qc-title">Create invoice</div>
+            <div class="amd-qc-sub">Generate and send a new invoice</div>
+          </a>
+          <button type="button" class="amd-quick-card amd-quick-card--btn" data-tab-to="notify">
+            <div class="amd-qc-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2a4 4 0 0 1 4 4v2l1 2H3l1-2V6a4 4 0 0 1 4-4z"/><path d="M6.5 12a1.5 1.5 0 0 0 3 0"/></svg></div>
+            <div class="amd-qc-title">Send notification</div>
+            <div class="amd-qc-sub">In-app, optional email &amp; SMS</div>
+          </button>
+        </div>
+
+        <div class="amd-card">
+          <div class="amd-card-hd">
+            <div class="amd-card-title">Recent service requests</div>
+            <a class="amd-view-all" href="#" data-tab-to="services">View all →</a>
+          </div>
+          <div class="amd-card-body" style="padding-top:10px">
+            <% if (!svc.length) { %><p class="amd-empty">None yet.</p><% } else { %>
+              <div class="amd-svc-list">
+                <% svc.slice(0, 5).forEach(function (r) { %>
+                  <div class="amd-svc-row">
+                    <div class="amd-svc-left">
+                      <div class="amd-svc-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="3" width="12" height="9" rx="1.5"/></svg></div>
+                      <div><div class="amd-svc-name"><%= r.service_name %></div><div class="amd-svc-date"><%= formatDateTime(r.created_at) %></div></div>
+                    </div>
+                    <span class="amd-status-pill amd-sp-info"><%= r.status %></span>
+                  </div>
+                <% }); %>
+              </div>
+            <% } %>
+          </div>
+        </div>
+
+        <div class="amd-card">
+          <div class="amd-card-hd">
+            <div class="amd-card-title">Recent invoices</div>
+            <a class="amd-view-all" href="#" data-tab-to="invoices">View all →</a>
+          </div>
+          <div class="amd-card-body" style="padding-top:10px">
+            <% if (!inv.length) { %><p class="amd-empty">None yet.</p><% } else { %>
+              <div class="amd-inv-list">
+                <% inv.slice(0, 5).forEach(function (i) { %>
+                  <a class="amd-inv-row" href="/admin/invoices/<%= i.id %>">
+                    <div><div class="amd-inv-num"><%= i.invoice_number %></div><div class="amd-inv-for"><%= i.notes ? String(i.notes).slice(0, 48) : 'Invoice' %></div></div>
+                    <div style="display:flex;align-items:center;gap:10px">
+                      <span class="amd-status-pill <%= i.status === 'paid' ? 'amd-sp-paid' : 'amd-sp-sent' %>"><%= i.status %></span>
+                      <span class="amd-inv-amount"><%= formatNgn(i.total_cents) %></span>
+                    </div>
+                  </a>
+                <% }); %>
+              </div>
+            <% } %>
+          </div>
+        </div>
+      </div>
+
+      <div class="amd-tab-content" id="amd-tab-bookings">
+        <div class="amd-card">
+          <div class="amd-card-hd">
+            <div class="amd-card-title">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7 2v10M2 7h10"/></svg>
+              Book a room for this member
+            </div>
+          </div>
+          <div class="amd-card-body">
+            <div class="amd-new-booking-form">
+              <p class="amd-nf-title">New meeting room booking</p>
+              <p class="amd-nf-sub">Uses the same engine as the member portal: <strong>plan credits first</strong>, invoice for the remaining balance only.</p>
+              <% if (!meetingRooms.length) { %>
+                <p class="amd-empty">No meeting rooms configured. Add rooms under Meeting rooms in admin.</p>
+              <% } else { %>
+              <form method="post" action="/admin/meeting-rooms/bookings/manual">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                <input type="hidden" name="member_id" value="<%= m.id %>" />
+                <div class="amd-form-row">
+                  <div class="amd-field-row">
+                    <label class="amd-field-label">Room</label>
+                    <select class="amd-field-select" name="room_id" required>
+                      <% meetingRooms.forEach(function (room) { %>
+                        <option value="<%= room.id %>"><%= room.name %></option>
+                      <% }); %>
+                    </select>
+                  </div>
+                </div>
+                <div class="amd-form-row">
+                  <div class="amd-field-row">
+                    <label class="amd-field-label">Start</label>
+                    <input class="amd-field-input" type="datetime-local" name="starts_at" required />
+                  </div>
+                  <div class="amd-field-row">
+                    <label class="amd-field-label">End</label>
+                    <input class="amd-field-input" type="datetime-local" name="ends_at" required />
+                  </div>
+                </div>
+                <div class="amd-field-row">
+                  <label class="amd-field-label">Purpose (optional)</label>
+                  <input class="amd-field-input" type="text" name="purpose" placeholder="e.g. Client meeting" />
+                </div>
+                <div class="amd-form-actions">
+                  <label class="amd-check"><input type="checkbox" name="create_invoice" value="1" checked /> Create invoice (balance after credits)</label>
+                  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+                    <button type="submit" class="amd-btn-sm amd-btn-sm-primary">Create booking &amp; invoice</button>
+                  </div>
+                  <p class="amd-page-lead" style="margin:8px 0 0;font-size:11px;">For a free internal block without billing, use the hub booking page and uncheck the invoice option.</p>
+                </div>
+              </form>
+              <% } %>
+            </div>
+          </div>
+        </div>
+
+        <div class="amd-card">
+          <div class="amd-card-hd">
+            <div class="amd-card-title">Booking history</div>
+            <span class="amd-card-meta"><%= roomBookings.length %> total</span>
+          </div>
+          <div class="amd-card-body" style="padding-top:10px">
+            <% if (!roomBookings.length) { %><p class="amd-empty">No bookings yet.</p><% } else { %>
+              <div class="amd-booking-list">
+                <% roomBookings.forEach(function (b) {
+                  var pay = b.payable_cents != null ? Number(b.payable_cents) : Number(b.total_cents);
+                  var rowClass = 'amd-booking-row';
+                  if (b.status === 'pending_payment') rowClass += ' amd-booking-pending';
+                  if (b.status === 'cancelled') rowClass += ' amd-booking-cancelled';
+                %>
+                  <div class="<%= rowClass %>">
+                    <div>
+                      <div class="amd-bk-room"><%= b.room_name %></div>
+                      <div class="amd-bk-time"><%= formatDateTime(b.starts_at) %> — <%= formatDateTime(b.ends_at) %></div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end">
+                      <span class="amd-status-pill <%= b.status === 'pending_payment' ? 'amd-sp-pending' : b.status === 'cancelled' ? 'amd-sp-cancelled' : 'amd-sp-paid' %>"><%= b.status.replace(/_/g, ' ') %></span>
+                      <span class="amd-bk-amount"><%= formatNgn(pay) %></span>
+                      <% if (b.invoice_id) { %>
+                        <a class="amd-btn-sm amd-btn-sm-outline" href="/admin/invoices/<%= b.invoice_id %>">Invoice</a>
+                      <% } %>
+                    </div>
+                  </div>
+                <% }); %>
+              </div>
+            <% } %>
+          </div>
+        </div>
+      </div>
+
+      <div class="amd-tab-content" id="amd-tab-services">
+        <div class="amd-card">
+          <div class="amd-card-hd">
+            <div class="amd-card-title">All service requests</div>
+            <span class="amd-card-meta"><%= svc.length %> total</span>
+          </div>
+          <div class="amd-card-body" style="padding-top:10px">
+            <% if (!svc.length) { %><p class="amd-empty">None yet.</p><% } else { %>
+              <div class="amd-svc-list">
+                <% svc.forEach(function (r) { %>
+                  <a class="amd-svc-row" href="/admin/service-requests/<%= r.id %>" style="text-decoration:none;color:inherit">
+                    <div class="amd-svc-left">
+                      <div class="amd-svc-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="3" width="12" height="9" rx="1.5"/></svg></div>
+                      <div><div class="amd-svc-name"><%= r.service_name %></div><div class="amd-svc-date"><%= formatDateTime(r.created_at) %></div></div>
+                    </div>
+                    <span class="amd-status-pill amd-sp-info"><%= r.status %></span>
+                  </a>
+                <% }); %>
+              </div>
+            <% } %>
+          </div>
+        </div>
+      </div>
+
+      <div class="amd-tab-content" id="amd-tab-invoices">
+        <div class="amd-card">
+          <div class="amd-card-hd">
+            <div class="amd-card-title">All invoices</div>
+            <span class="amd-card-meta"><%= inv.length %> total</span>
+          </div>
+          <div class="amd-card-body" style="padding-top:10px">
+            <% if (!inv.length) { %><p class="amd-empty">None yet.</p><% } else { %>
+              <div class="amd-inv-list">
+                <% inv.forEach(function (i) { %>
+                  <a class="amd-inv-row" href="/admin/invoices/<%= i.id %>">
+                    <div><div class="amd-inv-num"><%= i.invoice_number %></div><div class="amd-inv-for"><%= i.notes ? String(i.notes).slice(0, 56) : '—' %></div></div>
+                    <div style="display:flex;align-items:center;gap:10px">
+                      <span class="amd-status-pill <%= i.status === 'paid' ? 'amd-sp-paid' : i.status === 'cancelled' ? 'amd-sp-cancelled' : 'amd-sp-sent' %>"><%= i.status %></span>
+                      <span class="amd-inv-amount"><%= formatNgn(i.total_cents) %></span>
+                    </div>
+                  </a>
+                <% }); %>
+              </div>
+            <% } %>
+          </div>
+        </div>
+      </div>
+
+      <div class="amd-tab-content" id="amd-tab-docs">
+        <div class="amd-card">
+          <div class="amd-card-hd"><div class="amd-card-title">Upload to member</div></div>
+          <div class="amd-card-body">
+            <form method="post" action="/admin/members/<%= m.id %>/documents" enctype="multipart/form-data">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+              <div class="amd-field-row">
+                <label class="amd-field-label">File</label>
+                <input type="file" name="file" required accept=".pdf,.jpg,.jpeg,.png,.docx" />
+              </div>
+              <button type="submit" class="amd-btn-sm amd-btn-sm-primary" style="margin-top:8px">Upload to member</button>
+            </form>
+          </div>
+        </div>
+        <div class="amd-card">
+          <div class="amd-card-hd"><div class="amd-card-title">Member documents</div></div>
+          <div class="amd-card-body">
+            <% if (!docs.length) { %><p class="amd-empty">No documents uploaded yet.</p><% } else { %>
+              <ul class="amd-plain-list">
+                <% docs.forEach(function (d) { %>
+                  <li><a href="/admin/documents/download/<%= d.id %>"><%= d.original_name %></a></li>
+                <% }); %>
+              </ul>
+            <% } %>
+          </div>
+        </div>
+      </div>
+
+      <div class="amd-tab-content" id="amd-tab-notify">
+        <div class="amd-card">
+          <div class="amd-card-hd"><div class="amd-card-title">Send notification</div></div>
+          <div class="amd-card-body">
+            <form method="post" action="/admin/members/<%= m.id %>/notify" class="amd-notify-form">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+              <div class="amd-field-row">
+                <label class="amd-field-label">Title</label>
+                <input class="amd-field-input" type="text" name="title" placeholder="Notification title" required />
+              </div>
+              <div class="amd-field-row">
+                <label class="amd-field-label">Message</label>
+                <textarea class="amd-notes-textarea" name="message" placeholder="Message body..." required></textarea>
+              </div>
+              <div class="amd-field-row">
+                <label class="amd-field-label">Optional link path</label>
+                <input class="amd-field-input" type="text" name="link_url" placeholder="e.g. /billing, /services" />
+              </div>
+              <div class="amd-field-row amd-notify-channels">
+                <label class="amd-check"><input type="checkbox" name="send_email" value="1" /> Also send email to <%= m.email %></label>
+                <% if (m.phone) { %>
+                  <label class="amd-check"><input type="checkbox" name="send_sms" value="1" /> Send SMS (when SMS is configured)</label>
+                <% } %>
+              </div>
+              <button type="submit" class="amd-btn-sm amd-btn-sm-primary">Send notification</button>
+            </form>
+          </div>
+        </div>
+      </div>
+
+    </div>
   </div>
-  <% if (creditLedger && creditLedger.length) { %>
-    <ul class="plain-list" style="margin:0 0 16px;">
-      <% creditLedger.forEach(function (row) { %>
-        <li><%= formatDate(row.period_month) %> — granted <%= row.granted_minutes %>, used <%= row.used_minutes %></li>
-      <% }); %>
-    </ul>
-  <% } else { %>
-    <p class="page-lead" style="margin:0 0 16px;">No ledger rows yet (created when a member has an allowance and books or on monthly reset).</p>
-  <% } %>
-  <form method="post" action="/admin/members/<%= m.id %>/meeting-credits">
-    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-    <div class="form-row"><label>Month (YYYY-MM)</label><input type="month" name="period_month" /></div>
-    <div class="form-row"><label>Δ granted minutes</label><input type="number" name="delta_granted" value="0" step="1" /></div>
-    <div class="form-row"><label>Δ used minutes</label><input type="number" name="delta_used" value="0" step="1" /></div>
-    <p class="page-lead" style="font-size:12px;margin:0 0 12px;">Leave month blank for the current hub month. <strong>Δ granted</strong> adds courtesy minutes to the allowance. <strong>Δ used</strong> adjusts the consumed column (can be negative to undo an error).</p>
-    <button type="submit" class="btn btn-secondary">Apply adjustment</button>
-  </form>
+
+  <div id="amd-modal-plan" class="amd-modal" hidden aria-hidden="true">
+    <div class="amd-modal-backdrop" data-amd-modal-close="plan"></div>
+    <div class="amd-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="amd-modal-plan-title">
+      <h2 id="amd-modal-plan-title" class="amd-modal-title">Confirm plan assignment</h2>
+      <p class="amd-modal-lead">Saving will archive the current <strong>active</strong> membership row (if any) and create a new row with the details below.</p>
+      <div class="amd-modal-summary" id="amd-modal-plan-body"></div>
+      <div class="amd-modal-actions">
+        <button type="button" class="amd-btn-sm" data-amd-modal-close="plan">Cancel</button>
+        <button type="button" class="amd-btn-sm amd-btn-sm-primary" id="amd-modal-plan-confirm">Save plan</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="amd-modal-credit-grant" class="amd-modal" hidden aria-hidden="true">
+    <div class="amd-modal-backdrop" data-amd-modal-close="credit"></div>
+    <div class="amd-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="amd-modal-credit-title">
+      <h2 id="amd-modal-credit-title" class="amd-modal-title">Confirm credit grant</h2>
+      <p class="amd-modal-lead">This adds to the member&rsquo;s meeting room minutes for the month you selected (on top of any plan allowance).</p>
+      <div class="amd-modal-summary" id="amd-modal-credit-body"></div>
+      <div class="amd-modal-actions">
+        <button type="button" class="amd-btn-sm" data-amd-modal-close="credit">Cancel</button>
+        <button type="button" class="amd-btn-sm amd-btn-sm-primary" id="amd-modal-credit-confirm">Add credits</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="amd-modal-remove-plan" class="amd-modal" hidden aria-hidden="true">
+    <div class="amd-modal-backdrop" data-amd-modal-close="remove"></div>
+    <div class="amd-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="amd-modal-remove-title">
+      <h2 id="amd-modal-remove-title" class="amd-modal-title">Remove active plan?</h2>
+      <p class="amd-modal-lead">This soft-deletes the member&rsquo;s active plan. They will lose membership benefits until you assign a new plan.</p>
+      <div class="amd-modal-actions">
+        <button type="button" class="amd-btn-sm" data-amd-modal-close="remove">Cancel</button>
+        <button type="button" class="amd-btn-sm amd-btn-sm-primary" style="background:var(--red);border-color:var(--red);" id="amd-modal-remove-confirm">Remove plan</button>
+      </div>
+    </div>
+  </div>
 </div>
 
-<div class="card anim anim-2">
-  <div class="section-header">
-    <span class="section-title">Plan</span>
-  </div>
-  <% if (plans.length) { %>
-    <ul class="plain-list"><% plans.forEach(function (p) { %>
-      <li><%= p.name %> — <%= p.status %> · <%= formatDate(p.started_at) %> → <%= p.renewal_at ? formatDate(p.renewal_at) : '—' %></li>
-    <% }); %></ul>
-  <% } else { %>
-    <p class="page-lead" style="margin:0 0 16px;">No plans yet.</p>
-  <% } %>
-  <form method="post" action="/admin/members/<%= m.id %>/plan">
-    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-    <div class="form-row"><label>Tier</label><select name="tier_id"><% tiers.forEach(function (t) { %><option value="<%= t.id %>"><%= t.name %></option><% }); %></select></div>
-    <div class="form-row"><label>Started</label><input type="date" name="started_at" /></div>
-    <div class="form-row"><label>Renewal</label><input type="date" name="renewal_at" /></div>
-    <div class="form-row"><label>Status</label><select name="status"><option>active</option><option>suspended</option><option>pending_renewal</option></select></div>
-    <button type="submit" class="btn btn-primary">Set plan</button>
-  </form>
-</div>
+<script type="application/json" id="amd-plans-by-service"><%- typeof plansByServiceJson !== 'undefined' ? plansByServiceJson : '{}' %></script>
+<script type="application/json" id="amd-assign-plan-selection"><%- JSON.stringify(typeof assignPlanSelection !== 'undefined' ? assignPlanSelection : {}) %></script>
 
-<div class="card anim anim-2">
-  <div class="section-header">
-    <span class="section-title">Service requests</span>
-    <a class="section-link" href="/admin/service-requests">View all</a>
-  </div>
-  <% if (svc.length) { %>
-    <ul class="plain-list"><% svc.forEach(function (r) { %>
-      <li><a href="/admin/service-requests/<%= r.id %>"><%= r.service_name %></a> — <%= r.status %></li>
-    <% }); %></ul>
-  <% } else { %>
-    <div class="activity-empty">None yet.</div>
-  <% } %>
-</div>
-
-<div class="card anim anim-2">
-  <div class="section-header">
-    <span class="section-title">Invoices</span>
-    <a class="section-link" href="/admin/invoices">View all</a>
-  </div>
-  <% if (inv.length) { %>
-    <ul class="plain-list"><% inv.forEach(function (i) { %>
-      <li><a href="/admin/invoices/<%= i.id %>"><%= i.invoice_number %></a> — <%= formatNgn(i.total_cents) %> — <%= i.status %></li>
-    <% }); %></ul>
-  <% } else { %>
-    <div class="activity-empty">None yet.</div>
-  <% } %>
-</div>
-
-<div class="card anim anim-2">
-  <div class="section-header">
-    <span class="section-title">Documents</span>
-  </div>
-  <form method="post" action="/admin/members/<%= m.id %>/documents" enctype="multipart/form-data">
-    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-    <div class="form-row"><label>File</label><input type="file" name="file" required accept=".pdf,.jpg,.jpeg,.png,.docx" /></div>
-    <button type="submit" class="btn btn-secondary">Upload to member</button>
-  </form>
-  <% if (docs.length) { %>
-    <ul class="plain-list" style="margin-top:16px;"><% docs.forEach(function (d) { %>
-      <li><a href="/admin/documents/download/<%= d.id %>"><%= d.original_name %></a></li>
-    <% }); %></ul>
-  <% } else { %>
-    <p class="page-lead" style="margin:12px 0 0;">No documents.</p>
-  <% } %>
-</div>
-
-<div class="card anim anim-2">
-  <div class="section-header">
-    <span class="section-title">Support tickets</span>
-    <a class="section-link" href="/admin/support">Support</a>
-  </div>
-  <% if (tickets.length) { %>
-    <ul class="plain-list"><% tickets.forEach(function (t) { %>
-      <li><a href="/admin/support/<%= t.id %>"><%= t.subject %></a> — <%= t.status %></li>
-    <% }); %></ul>
-  <% } else { %>
-    <div class="activity-empty">None yet.</div>
-  <% } %>
-</div>
-
-<div class="card anim anim-2">
-  <div class="section-header">
-    <span class="section-title">Notify member</span>
-  </div>
-  <form method="post" action="/admin/members/<%= m.id %>/notify">
-    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-    <div class="form-row"><label>Title</label><input type="text" name="title" placeholder="Title" required /></div>
-    <div class="form-row"><label>Message</label><textarea name="message" placeholder="Message" required></textarea></div>
-    <div class="form-row"><label>Optional link path</label><input type="text" name="link_url" placeholder="e.g. /billing" /></div>
-    <button type="submit" class="btn btn-primary">Send</button>
-  </form>
-</div>
+<script>
+(function () {
+  var planForm = document.getElementById('amd-plan-form');
+  var planModal = document.getElementById('amd-modal-plan');
+  var planBody = document.getElementById('amd-modal-plan-body');
+  var removeForm = document.getElementById('amd-remove-plan-form');
+  var removeModal = document.getElementById('amd-modal-remove-plan');
+  var svcSel = document.getElementById('amd-plan-service');
+  var catSel = document.getElementById('amd-plan-catalogue');
+  var plansByService = {};
+  try {
+    var raw = document.getElementById('amd-plans-by-service');
+    if (raw && raw.textContent) plansByService = JSON.parse(raw.textContent) || {};
+  } catch (e) {}
+  var assignSel = {};
+  try {
+    var rawA = document.getElementById('amd-assign-plan-selection');
+    if (rawA && rawA.textContent) assignSel = JSON.parse(rawA.textContent) || {};
+  } catch (e2) {}
+  function fillPlanOptions(serviceId, selectedPlanId) {
+    if (!catSel) return;
+    catSel.innerHTML = '';
+    var opt0 = document.createElement('option');
+    opt0.value = '';
+    opt0.textContent = 'Select a plan';
+    catSel.appendChild(opt0);
+    var sid = serviceId != null && serviceId !== '' ? String(serviceId) : '';
+    var list = sid && plansByService[sid] ? plansByService[sid] : [];
+    if (!Array.isArray(list)) list = [];
+    list.forEach(function (p) {
+      var o = document.createElement('option');
+      o.value = p.id;
+      o.textContent = p.title || p.plan_slug || p.id;
+      if (selectedPlanId && String(selectedPlanId) === String(p.id)) o.selected = true;
+      catSel.appendChild(o);
+    });
+  }
+  if (svcSel && catSel) {
+    svcSel.addEventListener('change', function () {
+      fillPlanOptions(svcSel.value, null);
+    });
+    var initSid = assignSel.serviceId != null ? String(assignSel.serviceId) : '';
+    var initPid = assignSel.planId != null ? String(assignSel.planId) : '';
+    if (initSid) {
+      svcSel.value = initSid;
+      fillPlanOptions(initSid, initPid || null);
+    } else if (svcSel.options.length > 1) {
+      var first = null;
+      for (var i = 0; i < svcSel.options.length; i++) {
+        var v = svcSel.options[i].value;
+        if (!v) continue;
+        var pls = plansByService[v];
+        if (pls && pls.length) {
+          first = v;
+          break;
+        }
+      }
+      if (first) {
+        svcSel.value = first;
+        fillPlanOptions(first, null);
+      }
+    }
+  }
+  function esc(s) {
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+  function openPlanModal() {
+    if (!planForm || !planModal || !planBody) return;
+    var svcTxt = svcSel && svcSel.options[svcSel.selectedIndex] ? svcSel.options[svcSel.selectedIndex].text : '';
+    var planTxt = catSel && catSel.options[catSel.selectedIndex] ? catSel.options[catSel.selectedIndex].text : '';
+    if (!catSel || !catSel.value) {
+      alert('Select a Core Workspace service and plan.');
+      return;
+    }
+    var st = document.getElementById('amd-plan-status');
+    var statusTxt = st && st.options[st.selectedIndex] ? st.options[st.selectedIndex].text : '';
+    var started = (document.getElementById('amd-plan-started') || {}).value || '—';
+    var renewal = (document.getElementById('amd-plan-renewal') || {}).value || '—';
+    planBody.innerHTML =
+      '<div class="amd-modal-row"><span class="amd-modal-k">Service</span><span class="amd-modal-v">' + esc(svcTxt) + '</span></div>' +
+      '<div class="amd-modal-row"><span class="amd-modal-k">Plan</span><span class="amd-modal-v">' + esc(planTxt) + '</span></div>' +
+      '<div class="amd-modal-row"><span class="amd-modal-k">Status</span><span class="amd-modal-v">' + esc(statusTxt) + '</span></div>' +
+      '<div class="amd-modal-row"><span class="amd-modal-k">Started</span><span class="amd-modal-v">' + esc(started) + '</span></div>' +
+      '<div class="amd-modal-row"><span class="amd-modal-k">Renewal</span><span class="amd-modal-v">' + esc(renewal) + '</span></div>';
+    planModal.removeAttribute('hidden');
+    planModal.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+  }
+  function closePlanModal() {
+    if (!planModal) return;
+    planModal.setAttribute('hidden', '');
+    planModal.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+  }
+  function openRemoveModal() {
+    if (!removeModal) return;
+    removeModal.removeAttribute('hidden');
+    removeModal.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeRemoveModal() {
+    if (!removeModal) return;
+    removeModal.setAttribute('hidden', '');
+    removeModal.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+  }
+  var openBtn = document.getElementById('amd-plan-open-modal');
+  if (openBtn) openBtn.addEventListener('click', openPlanModal);
+  document.getElementById('amd-modal-plan-confirm') &&
+    document.getElementById('amd-modal-plan-confirm').addEventListener('click', function () {
+      if (planForm) planForm.submit();
+    });
+  document.querySelectorAll('[data-amd-modal-close="plan"]').forEach(function (el) {
+    el.addEventListener('click', closePlanModal);
+  });
+  var removeOpen = document.getElementById('amd-remove-plan-open');
+  if (removeOpen) removeOpen.addEventListener('click', openRemoveModal);
+  document.getElementById('amd-modal-remove-confirm') &&
+    document.getElementById('amd-modal-remove-confirm').addEventListener('click', function () {
+      if (removeForm) removeForm.submit();
+    });
+  document.querySelectorAll('[data-amd-modal-close="remove"]').forEach(function (el) {
+    el.addEventListener('click', closeRemoveModal);
+  });
+  var creditForm = document.getElementById('amd-form-credit-grant');
+  var creditModal = document.getElementById('amd-modal-credit-grant');
+  var creditBody = document.getElementById('amd-modal-credit-body');
+  function closeCreditModal() {
+    if (!creditModal) return;
+    creditModal.setAttribute('hidden', '');
+    creditModal.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+  }
+  function openCreditModal() {
+    if (!creditForm || !creditModal || !creditBody) return;
+    var minEl = document.getElementById('amd-credit-minutes');
+    var expEl = document.getElementById('amd-credit-expires');
+    var noteEl = document.getElementById('amd-credit-note');
+    var mins = minEl && minEl.value ? parseInt(minEl.value, 10) : 0;
+    var expVal = expEl && expEl.value ? expEl.value : '';
+    if (!mins || mins < 1) {
+      alert('Enter a valid number of minutes (at least 1).');
+      return;
+    }
+    if (!expVal) {
+      alert('Choose when these credits expire.');
+      return;
+    }
+    var expLabel = expVal;
+    try {
+      var p = expVal.split('-');
+      if (p.length === 3) {
+        var dt = new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10));
+        expLabel = dt.toLocaleString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+      }
+    } catch (e) {}
+    var noteTxt = noteEl && noteEl.value ? noteEl.value.trim() : '';
+    var hrs = (mins / 60).toFixed(mins % 60 === 0 ? 0 : 1);
+    var memberName = 'Member';
+    try {
+      var mn = creditForm.getAttribute('data-member-name');
+      if (mn) memberName = decodeURIComponent(mn);
+    } catch (e) {}
+    creditBody.innerHTML =
+      '<div class="amd-modal-row"><span class="amd-modal-k">Member</span><span class="amd-modal-v">' +
+      esc(memberName) +
+      '</span></div>' +
+      '<div class="amd-modal-row"><span class="amd-modal-k">Add</span><span class="amd-modal-v">' +
+      esc(String(mins)) +
+      ' min (~' +
+      esc(hrs) +
+      ' hrs)</span></div>' +
+      '<div class="amd-modal-row"><span class="amd-modal-k">Expires</span><span class="amd-modal-v">' +
+      esc(expLabel) +
+      '</span></div>' +
+      (noteTxt
+        ? '<div class="amd-modal-row"><span class="amd-modal-k">Note</span><span class="amd-modal-v">' + esc(noteTxt) + '</span></div>'
+        : '');
+    creditModal.removeAttribute('hidden');
+    creditModal.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+  }
+  var creditOpenBtn = document.getElementById('amd-credit-open-modal');
+  if (creditOpenBtn) creditOpenBtn.addEventListener('click', openCreditModal);
+  document.getElementById('amd-modal-credit-confirm') &&
+    document.getElementById('amd-modal-credit-confirm').addEventListener('click', function () {
+      if (creditForm) creditForm.submit();
+    });
+  document.querySelectorAll('[data-amd-modal-close="credit"]').forEach(function (el) {
+    el.addEventListener('click', closeCreditModal);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') {
+      closePlanModal();
+      closeRemoveModal();
+      closeCreditModal();
+    }
+  });
+})();
+(function () {
+  var tabs = document.querySelectorAll('.amd-tab-btn');
+  var contents = document.querySelectorAll('.amd-tab-content');
+  function showTab(name) {
+    contents.forEach(function (c) {
+      c.classList.toggle('active', c.id === 'amd-tab-' + name);
+    });
+    tabs.forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-tab') === name);
+    });
+  }
+  tabs.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      showTab(btn.getAttribute('data-tab'));
+    });
+  });
+  document.querySelectorAll('[data-tab-to]').forEach(function (el) {
+    el.addEventListener('click', function (e) {
+      var t = el.getAttribute('data-tab-to');
+      if (t) {
+        e.preventDefault();
+        showTab(t);
+      }
+    });
+  });
+})();
+</script>
