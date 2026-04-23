@@ -1,0 +1,425 @@
+<% var canMutate = typeof canMutate !== 'undefined' && canMutate; %>
+<style>
+  .rep-loading { color: var(--text-secondary); font-size: 14px; padding: 12px 0; }
+  .rep-stat-grid-6 { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; }
+  .rep-card-danger { border-color: #c62828 !important; }
+  .rep-card-danger .stat-value { color: #b71c1c; }
+  .rep-compare-up { color: #1b5e20; font-size: 13px; font-weight: 600; margin-left: 8px; }
+  .rep-compare-down { color: #b71c1c; font-size: 13px; font-weight: 600; margin-left: 8px; }
+  .rep-chart-legend { display: flex; flex-wrap: wrap; gap: 10px 16px; font-size: 12px; margin-top: 10px; color: var(--text-secondary); }
+  .rep-chart-legend span i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
+  .rep-seg-bar { display: flex; height: 22px; border-radius: 6px; overflow: hidden; background: #eee; margin-top: 8px; }
+  .rep-seg-bar div { height: 100%; }
+  .rep-month-row { margin-bottom: 16px; }
+  .rep-month-label { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .rep-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin-bottom: 12px; }
+  .rep-toolbar label { font-size: 12px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 4px; }
+  .rep-toolbar input, .rep-toolbar select { padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; }
+  .rep-muted { color: var(--text-secondary); font-size: 13px; }
+  .rep-seg-ws { background: #3949ab; }
+  .rep-seg-vo { background: #00838f; }
+  .rep-seg-pr { background: #6d4c41; }
+  .rep-seg-rb { background: #f9a825; }
+  .rep-seg-ce { background: #ad1457; }
+</style>
+
+<div class="card anim anim-1" style="margin-bottom: 18px;">
+  <div class="section-header"><span class="section-title">Revenue summary</span></div>
+  <div id="fin-sum-loading" class="rep-loading">Loading…</div>
+  <div id="fin-sum-wrap" style="display: none;">
+    <div class="rep-stat-grid-6" id="fin-sum-grid"></div>
+    <div style="margin-top: 22px;">
+      <div class="section-title" style="font-size:16px;margin-bottom:8px;">Last 6 months (collected)</div>
+      <div id="fin-chart"></div>
+      <div class="rep-chart-legend" id="fin-chart-legend"></div>
+    </div>
+  </div>
+</div>
+
+<div class="card anim anim-2" style="margin-bottom: 18px;">
+  <div class="section-header"><span class="section-title">Subscription revenue breakdown</span></div>
+  <div id="fin-mrr-loading" class="rep-loading">Loading…</div>
+  <div id="fin-mrr-wrap" style="display: none; overflow-x: auto;">
+    <table class="data" style="width:100%; min-width:720px;">
+      <thead>
+        <tr>
+          <th>Plan</th>
+          <th>Active members</th>
+          <th>Monthly rate</th>
+          <th>MRR</th>
+          <th>Available units</th>
+          <th>Occupied units</th>
+        </tr>
+      </thead>
+      <tbody id="fin-mrr-body"></tbody>
+      <tfoot id="fin-mrr-foot"></tfoot>
+    </table>
+    <h3 style="margin:20px 0 10px; font-size:17px;">Renewals in this calendar month</h3>
+    <div id="fin-expire" style="overflow-x:auto;"></div>
+  </div>
+</div>
+
+<div class="card anim anim-3" style="margin-bottom: 18px;">
+  <div class="section-header"><span class="section-title">Service request history</span></div>
+  <div class="rep-toolbar">
+    <label>From <input type="date" id="sr-from" /></label>
+    <label>To <input type="date" id="sr-to" /></label>
+    <label>Category
+      <select id="sr-cat"><option value="">All</option></select>
+    </label>
+    <label>Status
+      <select id="sr-st">
+        <option value="">All</option>
+        <option>Submitted</option>
+        <option>Under Review</option>
+        <option>In Progress</option>
+        <option>Action Required</option>
+        <option>Completed</option>
+        <option>Cancelled</option>
+      </select>
+    </label>
+    <label>Consultant
+      <select id="sr-cons"><option value="">All</option></select>
+    </label>
+    <button type="button" class="btn btn-primary" id="sr-apply">Apply</button>
+    <a class="btn" href="#" id="sr-csv">Export CSV</a>
+    <span class="rep-muted" id="sr-meta"></span>
+  </div>
+  <div id="sr-loading" class="rep-loading">Loading…</div>
+  <div id="sr-table-wrap" style="display: none; overflow-x: auto;">
+    <table class="data" style="width:100%; min-width:900px;">
+      <thead>
+        <tr>
+          <th>Submitted</th>
+          <th>Member</th>
+          <th>Service</th>
+          <th>Category</th>
+          <th>Consultant</th>
+          <th>Status</th>
+          <th>Invoice</th>
+          <th>Payment</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="sr-body"></tbody>
+    </table>
+    <div style="margin-top:10px;display:flex;gap:12px;align-items:center;">
+      <button type="button" class="btn btn-sm" id="sr-prev">Previous</button>
+      <span class="rep-muted" id="sr-page-lbl"></span>
+      <button type="button" class="btn btn-sm" id="sr-next">Next</button>
+    </div>
+  </div>
+</div>
+
+<div class="card anim anim-4" style="margin-bottom: 18px;">
+  <div class="section-header"><span class="section-title">Invoice ledger</span></div>
+  <div class="rep-toolbar">
+    <label>From <input type="date" id="inv-from" /></label>
+    <label>To <input type="date" id="inv-to" /></label>
+    <label>Status
+      <select id="inv-st">
+        <option value="all">All</option>
+        <option value="paid">Paid</option>
+        <option value="sent">Sent</option>
+        <option value="unpaid">Unpaid</option>
+        <option value="overdue">Overdue</option>
+        <option value="cancelled">Cancelled</option>
+      </select>
+    </label>
+    <label>Member <input type="search" id="inv-q" placeholder="Name" style="min-width:160px;" /></label>
+    <button type="button" class="btn btn-primary" id="inv-apply">Apply</button>
+    <a class="btn" href="#" id="inv-csv">Export CSV</a>
+  </div>
+  <div id="inv-loading" class="rep-loading">Loading…</div>
+  <div id="inv-wrap" style="display: none; overflow-x: auto;">
+    <table class="data" style="width:100%; min-width:920px;">
+      <thead>
+        <tr>
+          <th>Invoice</th>
+          <th>Issued</th>
+          <th>Member</th>
+          <th>Description</th>
+          <th>Amount</th>
+          <th>Status</th>
+          <th>Method</th>
+          <th>Paid</th>
+          <th>Receipt</th>
+        </tr>
+      </thead>
+      <tbody id="inv-body"></tbody>
+    </table>
+    <p style="margin:12px 0 8px; font-weight:600;">Totals for current view</p>
+    <div class="rep-stat-grid-6" id="inv-totals"></div>
+    <div style="margin-top:10px;display:flex;gap:12px;align-items:center;">
+      <button type="button" class="btn btn-sm" id="inv-prev">Previous</button>
+      <span class="rep-muted" id="inv-page-lbl"></span>
+      <button type="button" class="btn btn-sm" id="inv-next">Next</button>
+    </div>
+  </div>
+</div>
+
+<div class="card anim anim-5" style="margin-bottom: 18px;">
+  <div class="section-header"><span class="section-title">Consultant activity</span></div>
+  <div class="rep-toolbar">
+    <label>From <input type="date" id="co-from" /></label>
+    <label>To <input type="date" id="co-to" /></label>
+    <button type="button" class="btn btn-primary" id="co-apply">Apply</button>
+  </div>
+  <div id="co-loading" class="rep-loading">Loading…</div>
+  <div id="co-wrap" style="display: none; overflow-x: auto;">
+    <table class="data" style="width:100%; min-width:800px;">
+      <thead>
+        <tr>
+          <th>Consultant</th>
+          <th>Role</th>
+          <th>Handled</th>
+          <th>Completed</th>
+          <th>On time</th>
+          <th>Avg rating</th>
+          <th>Value managed</th>
+        </tr>
+      </thead>
+      <tbody id="co-body"></tbody>
+      <tfoot id="co-foot"></tfoot>
+    </table>
+  </div>
+</div>
+
+<script>
+(function () {
+  var csrf = '<%= csrfToken %>';
+  var srPage = 1;
+  var invPage = 1;
+
+  function el(html) {
+    var t = document.createElement('template');
+    t.innerHTML = html.trim();
+    return t.content.firstChild;
+  }
+
+  function fetchJson(url) {
+    return fetch(url, { credentials: 'same-origin' }).then(function (r) {
+      if (!r.ok) throw new Error('load failed');
+      return r.json();
+    });
+  }
+
+  function padIso(d) {
+    if (!d) return '';
+    if (typeof d === 'string') return d.slice(0, 10);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function formatNgnJs(c) {
+    try {
+      return new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format((c || 0) / 100);
+    } catch (e) { return String(c); }
+  }
+
+  function renderOverview(data) {
+    var g = document.getElementById('fin-sum-grid');
+    var cmp = data.collectionsMonthComparePct;
+    var cmpCls = cmp >= 0 ? 'rep-compare-up' : 'rep-compare-down';
+    var arrow = cmp >= 0 ? '↑' : '↓';
+    g.innerHTML = '';
+    function tile(label, val, extra, danger) {
+      var cls = 'admin-dash-stat-tile' + (danger ? ' rep-card-danger' : '');
+      return '<div class="' + cls + '"><div class="stat-label">' + label + '</div><div class="stat-value" style="font-size:20px;">' + val + '</div>' + (extra || '') + '</div>';
+    }
+    g.appendChild(el(tile('Today\'s collections', data.labels.collectionsToday, '')));
+    g.appendChild(el(tile('This week (Mon–today)', data.labels.collectionsWeek, '')));
+    g.appendChild(el(tile('This month', data.labels.collectionsMonth + '<span class="' + cmpCls + '">' + arrow + ' ' + Math.abs(cmp) + '% vs last month</span>', '')));
+    g.appendChild(el(tile('Total outstanding', data.labels.outstanding, '')));
+    g.appendChild(el(tile('Overdue', data.labels.overdue, '', true)));
+    g.appendChild(el(tile('Avg revenue / active member (MTD)', data.labels.avgPerMember, '<div class="rep-muted" style="margin-top:6px;font-size:12px;">' + data.activeMembersForAvg + ' active members</div>')));
+
+    var ch = document.getElementById('fin-chart');
+    ch.innerHTML = '';
+    data.chart.forEach(function (m) {
+      var total = m.total || 0;
+      var row = document.createElement('div');
+      row.className = 'rep-month-row';
+      var lab = document.createElement('div');
+      lab.className = 'rep-month-label';
+      lab.textContent = m.month_label + ' · ' + formatNgnJs(total);
+      row.appendChild(lab);
+      var bar = document.createElement('div');
+      bar.className = 'rep-seg-bar';
+      [
+        { c: m.workspace_plans, cl: 'rep-seg-ws' },
+        { c: m.virtual_office, cl: 'rep-seg-vo' },
+        { c: m.professional_services, cl: 'rep-seg-pr' },
+        { c: m.room_bookings, cl: 'rep-seg-rb' },
+        { c: m.community_and_events, cl: 'rep-seg-ce' },
+      ].forEach(function (s) {
+        var pct = total > 0 ? (100 * s.c / total) : 0;
+        if (pct <= 0) return;
+        var d = document.createElement('div');
+        d.className = s.cl;
+        d.style.width = pct + '%';
+        bar.appendChild(d);
+      });
+      row.appendChild(bar);
+      ch.appendChild(row);
+    });
+    document.getElementById('fin-chart-legend').innerHTML =
+      '<span><i class="rep-seg-ws"></i>Workspace plans</span>' +
+      '<span><i class="rep-seg-vo"></i>Virtual office</span>' +
+      '<span><i class="rep-seg-pr"></i>Professional services</span>' +
+      '<span><i class="rep-seg-rb"></i>Room bookings</span>' +
+      '<span><i class="rep-seg-ce"></i>Community &amp; events</span>';
+
+    document.getElementById('fin-sum-loading').style.display = 'none';
+    document.getElementById('fin-sum-wrap').style.display = 'block';
+
+    var tb = document.getElementById('fin-mrr-body');
+    tb.innerHTML = '';
+    data.mrrTable.forEach(function (r) {
+      tb.appendChild(el('<tr><td>' + r.plan_name + '</td><td>' + r.active_members + '</td><td>' + r.monthly_rate_label + '</td><td>' + r.mrr_label + '</td><td>' + r.available_units + '</td><td>' + r.occupied_units + '</td></tr>'));
+    });
+    document.getElementById('fin-mrr-foot').innerHTML = '<tr style="font-weight:600;"><td>Totals</td><td>—</td><td>—</td><td>' + data.mrrTotalsLabel + '</td><td>—</td><td>—</td></tr>';
+
+    var ex = document.getElementById('fin-expire');
+    if (!data.expiring.length) {
+      ex.innerHTML = '<p class="rep-muted">No renewals due this month.</p>';
+    } else {
+      var h = '<table class="data" style="width:100%;min-width:640px;"><thead><tr><th>Member</th><th>Plan</th><th>Expiry</th><th>Days left</th><th></th></tr></thead><tbody>';
+      data.expiring.forEach(function (r) {
+        h += '<tr><td>' + r.member_name + '</td><td>' + r.plan_name + '</td><td>' + r.expiry_label + '</td><td>' + r.days_remaining + '</td><td><a class="btn btn-sm btn-primary" href="' + r.renew_href + '">Renew</a></td></tr>';
+      });
+      h += '</tbody></table>';
+      ex.innerHTML = h;
+    }
+    document.getElementById('fin-mrr-loading').style.display = 'none';
+    document.getElementById('fin-mrr-wrap').style.display = 'block';
+
+    var cat = document.getElementById('sr-cat');
+    while (cat.options.length > 1) cat.remove(1);
+    (data.meta.categories || []).forEach(function (c) {
+      cat.appendChild(el('<option value="' + c.slug + '">' + c.name + '</option>'));
+    });
+    var cons = document.getElementById('sr-cons');
+    while (cons.options.length > 1) cons.remove(1);
+    (data.meta.consultants || []).forEach(function (u) {
+      cons.appendChild(el('<option value="' + u.id + '">' + u.username + '</option>'));
+    });
+  }
+
+  fetchJson('/admin/reports/api/finance-overview').then(function (data) {
+    renderOverview(data);
+    var t = padIso(data.today);
+    document.getElementById('sr-from').value = t.slice(0, 8) + '01';
+    document.getElementById('sr-to').value = t;
+    document.getElementById('inv-from').value = t.slice(0, 8) + '01';
+    document.getElementById('inv-to').value = t;
+    document.getElementById('co-from').value = t.slice(0, 8) + '01';
+    document.getElementById('co-to').value = t;
+    loadSr();
+    loadInv();
+    loadCo();
+  }).catch(function () {
+    document.querySelectorAll('.rep-loading').forEach(function (x) { x.textContent = 'Could not load data.'; });
+  });
+
+  function srQuery() {
+    var q = new URLSearchParams();
+    q.set('from', document.getElementById('sr-from').value);
+    q.set('to', document.getElementById('sr-to').value);
+    var c = document.getElementById('sr-cat').value;
+    if (c) q.set('category', c);
+    var st = document.getElementById('sr-st').value;
+    if (st) q.set('status', st);
+    var co = document.getElementById('sr-cons').value;
+    if (co) q.set('consultant', co);
+    q.set('page', String(srPage));
+    return q.toString();
+  }
+
+  function loadSr() {
+    document.getElementById('sr-loading').style.display = 'block';
+    document.getElementById('sr-table-wrap').style.display = 'none';
+    fetchJson('/admin/reports/api/finance-service-history?' + srQuery()).then(function (d) {
+      document.getElementById('sr-meta').textContent = d.total + ' rows · invoice total ' + d.invoiceSumLabel;
+      var tb = document.getElementById('sr-body');
+      tb.innerHTML = '';
+      d.rows.forEach(function (r) {
+        tb.appendChild(el('<tr><td>' + r.submitted_label + '</td><td>' + r.member_name + '</td><td>' + r.service_name + '</td><td>' + r.category + '</td><td>' + r.consultant + '</td><td><span class="badge">' + r.status + '</span></td><td>' + r.invoice_label + '</td><td>' + r.payment_status + '</td><td><a class="section-link" href="' + r.view_href + '">View</a></td></tr>'));
+      });
+      document.getElementById('sr-page-lbl').textContent = 'Page ' + d.page + ' of ' + (Math.max(1, Math.ceil(d.total / d.pageSize)));
+      document.getElementById('sr-loading').style.display = 'none';
+      document.getElementById('sr-table-wrap').style.display = 'block';
+    });
+  }
+
+  document.getElementById('sr-apply').addEventListener('click', function () { srPage = 1; loadSr(); });
+  document.getElementById('sr-prev').addEventListener('click', function () { if (srPage > 1) { srPage--; loadSr(); } });
+  document.getElementById('sr-next').addEventListener('click', function () { srPage++; loadSr(); });
+  document.getElementById('sr-csv').addEventListener('click', function (e) {
+    e.preventDefault();
+    window.location = '/admin/reports/api/finance-service-history?' + srQuery() + '&export=csv';
+  });
+
+  function invQuery() {
+    var q = new URLSearchParams();
+    q.set('from', document.getElementById('inv-from').value);
+    q.set('to', document.getElementById('inv-to').value);
+    q.set('status', document.getElementById('inv-st').value);
+    var n = document.getElementById('inv-q').value.trim();
+    if (n) q.set('q', n);
+    q.set('page', String(invPage));
+    return q.toString();
+  }
+
+  function loadInv() {
+    document.getElementById('inv-loading').style.display = 'block';
+    document.getElementById('inv-wrap').style.display = 'none';
+    fetchJson('/admin/reports/api/finance-invoices?' + invQuery()).then(function (d) {
+      var tb = document.getElementById('inv-body');
+      tb.innerHTML = '';
+      d.rows.forEach(function (r) {
+        var rec = r.receipt_href ? '<a class="section-link" href="' + r.receipt_href + '" target="_blank" rel="noopener">Receipt</a>' : '—';
+        tb.appendChild(el('<tr><td><a class="section-link" href="' + r.invoice_href + '">' + r.invoice_number + '</a></td><td>' + r.issued_label + '</td><td>' + r.member_name + '</td><td>' + r.description + '</td><td>' + r.amount_label + '</td><td><span class="badge">' + r.status + '</span></td><td>' + r.pay_method + '</td><td>' + r.paid_label + '</td><td>' + rec + '</td></tr>'));
+      });
+      document.getElementById('inv-totals').innerHTML =
+        '<div class="admin-dash-stat-tile"><div class="stat-label">Invoiced</div><div class="stat-value" style="font-size:18px;">' + d.totals.invoicedLabel + '</div></div>' +
+        '<div class="admin-dash-stat-tile"><div class="stat-label">Collected</div><div class="stat-value" style="font-size:18px;">' + d.totals.collectedLabel + '</div></div>' +
+        '<div class="admin-dash-stat-tile"><div class="stat-label">Outstanding</div><div class="stat-value" style="font-size:18px;">' + d.totals.outstandingLabel + '</div></div>';
+      document.getElementById('inv-page-lbl').textContent = 'Page ' + d.page + ' of ' + (Math.max(1, Math.ceil(d.total / d.pageSize)));
+      document.getElementById('inv-loading').style.display = 'none';
+      document.getElementById('inv-wrap').style.display = 'block';
+    });
+  }
+
+  document.getElementById('inv-apply').addEventListener('click', function () { invPage = 1; loadInv(); });
+  document.getElementById('inv-prev').addEventListener('click', function () { if (invPage > 1) { invPage--; loadInv(); } });
+  document.getElementById('inv-next').addEventListener('click', function () { invPage++; loadInv(); });
+  document.getElementById('inv-csv').addEventListener('click', function (e) {
+    e.preventDefault();
+    window.location = '/admin/reports/api/finance-invoices?' + invQuery() + '&export=csv';
+  });
+
+  function coQuery() {
+    var q = new URLSearchParams();
+    q.set('from', document.getElementById('co-from').value);
+    q.set('to', document.getElementById('co-to').value);
+    return q.toString();
+  }
+
+  function loadCo() {
+    document.getElementById('co-loading').style.display = 'block';
+    document.getElementById('co-wrap').style.display = 'none';
+    fetchJson('/admin/reports/api/finance-consultants?' + coQuery()).then(function (d) {
+      var tb = document.getElementById('co-body');
+      tb.innerHTML = '';
+      d.rows.forEach(function (r) {
+        tb.appendChild(el('<tr><td>' + r.name + '</td><td>' + r.role + '</td><td>' + r.handled + '</td><td>' + r.completed + '</td><td>' + r.on_time + ' (' + r.on_time_label + ')</td><td>' + r.rating_label + '</td><td>' + r.value_label + '</td></tr>'));
+      });
+      var f = d.footer;
+      document.getElementById('co-foot').innerHTML = '<tr style="font-weight:600;"><td>Totals</td><td>—</td><td>' + f.handled + '</td><td>' + f.completed + '</td><td>' + f.on_time + ' (' + f.on_time_label + ')</td><td>' + f.rating_label + '</td><td>' + f.value_label + '</td></tr>';
+      document.getElementById('co-loading').style.display = 'none';
+      document.getElementById('co-wrap').style.display = 'block';
+    });
+  }
+  document.getElementById('co-apply').addEventListener('click', loadCo);
+})();
+</script>

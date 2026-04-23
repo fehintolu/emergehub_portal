@@ -16,6 +16,7 @@ const authRoutes = require('./routes/auth');
 const memberArea = require('./routes/memberArea');
 const adminLogin = require('./routes/adminLogin');
 const adminMain = require('./routes/adminMain');
+const adminReports = require('./routes/adminReports');
 const adminMeetingRooms = require('./routes/adminMeetingRooms');
 const adminCapacity = require('./routes/adminCapacity');
 
@@ -152,6 +153,7 @@ app.use('/admin', adminLogin);
 app.use('/admin', adminMeetingRooms);
 app.use('/admin', adminCapacity);
 app.use('/admin', adminMain);
+app.use('/admin', adminReports);
 /* Unmatched /admin/* must not fall through to memberArea (would run requireMember → /auth/login). */
 app.use('/admin', (req, res) => {
   res.status(404).send('Not found');

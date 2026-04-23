@@ -1,0 +1,255 @@
+<% var canMutate = typeof canMutate !== 'undefined' && canMutate; %>
+<style>
+  .rep-loading { color: var(--text-secondary); font-size: 14px; padding: 12px 0; }
+  .rep-compare-up { color: #1b5e20; font-size: 13px; font-weight: 600; margin-left: 8px; }
+  .rep-compare-down { color: #b71c1c; font-size: 13px; font-weight: 600; margin-left: 8px; }
+  .rep-row-overdue { border-left: 4px solid #c62828; }
+  .rep-row-renew { border-left: 4px solid #f9a825; }
+  .rep-row-ok { border-left: 4px solid #2e7d32; }
+  .rep-subhead { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin: 16px 0 8px; }
+  .rep-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+  .rep-toolbar .filter-pill { cursor: pointer; }
+  .rep-toolbar .filter-pill.active { border-color: var(--brand); background: var(--surface-2); font-weight: 600; }
+  .rep-search { min-width: 200px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
+  .rep-muted { color: var(--text-secondary); font-size: 13px; }
+</style>
+
+<div class="card anim anim-1" style="margin-bottom: 18px;">
+  <div class="section-header">
+    <span class="section-title">Today at a glance</span>
+  </div>
+  <div id="rep-glance-loading" class="rep-loading">Loading…</div>
+  <div id="rep-glance-grid" class="admin-dash-stat-grid" style="display: none;" role="list"></div>
+</div>
+
+<div class="card anim anim-2" style="margin-bottom: 18px;">
+  <div class="section-header">
+    <span class="section-title">Active members and subscriptions</span>
+  </div>
+  <div class="rep-toolbar">
+    <span class="filter-pill rep-plan-chip active" data-plan="all">All</span>
+    <span class="filter-pill rep-plan-chip" data-plan="daily_access">Daily Access</span>
+    <span class="filter-pill rep-plan-chip" data-plan="super_desk">Super Desk</span>
+    <span class="filter-pill rep-plan-chip" data-plan="hot_desk">Hot Desk</span>
+    <span class="filter-pill rep-plan-chip" data-plan="dedicated_desk">Dedicated Desk</span>
+    <span class="filter-pill rep-plan-chip" data-plan="private_office">Private Office</span>
+    <span class="filter-pill rep-plan-chip" data-plan="virtual_office">Virtual Office</span>
+    <input type="search" id="rep-member-search" class="rep-search" placeholder="Search member name" autocomplete="off" />
+    <span id="rep-member-count" class="rep-muted"></span>
+  </div>
+  <div id="rep-members-loading" class="rep-loading">Loading…</div>
+  <div id="rep-members-wrap" style="display: none; overflow-x: auto;">
+    <table class="data" style="width:100%; min-width:720px;">
+      <thead>
+        <tr>
+          <th>Member</th>
+          <th>Plan</th>
+          <th>Unit</th>
+          <th>Start</th>
+          <th>Renewal</th>
+          <th>Days left</th>
+          <th>Outstanding</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="rep-members-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card anim anim-3" style="margin-bottom: 18px;">
+  <div class="section-header">
+    <span class="section-title">Service requests needing action</span>
+  </div>
+  <div id="rep-sr-loading" class="rep-loading">Loading…</div>
+  <div id="rep-sr-wrap" style="display: none;"></div>
+</div>
+
+<div class="card anim anim-4" style="margin-bottom: 18px;">
+  <div class="section-header">
+    <span class="section-title">Payments due</span>
+  </div>
+  <div id="rep-pay-loading" class="rep-loading">Loading…</div>
+  <div id="rep-pay-wrap" style="display: none;">
+    <p style="margin:0 0 14px; font-size: 22px; font-weight: 600;">Outstanding: <span id="rep-outstanding-big"></span></p>
+    <div class="rep-subhead">Due today</div>
+    <div id="rep-due-today" style="overflow-x:auto;"></div>
+    <div class="rep-subhead">Due this week (after today)</div>
+    <div id="rep-due-week" style="overflow-x:auto;"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var csrf = '<%= csrfToken %>';
+  var canMutate = <%= canMutate ? 'true' : 'false' %>;
+
+  function el(html) {
+    var t = document.createElement('template');
+    t.innerHTML = html.trim();
+    return t.content.firstChild;
+  }
+
+  function fetchJson(url) {
+    return fetch(url, { credentials: 'same-origin' }).then(function (r) {
+      if (!r.ok) throw new Error('load failed');
+      return r.json();
+    });
+  }
+
+  function postForm(url) {
+    var body = new URLSearchParams();
+    body.set('_csrf', csrf);
+    return fetch(url, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    }).then(function (r) { return r.json(); });
+  }
+
+  function renderGlance(d) {
+    var grid = document.getElementById('rep-glance-grid');
+    var cmp = d.revenueMtdComparePct;
+    var cmpCls = cmp >= 0 ? 'rep-compare-up' : 'rep-compare-down';
+    var arrow = cmp >= 0 ? '↑' : '↓';
+    grid.innerHTML = '';
+    grid.appendChild(el('<div class="admin-dash-stat-tile" role="listitem"><div class="stat-label">Revenue collected today</div><div class="stat-value" style="font-size:22px;">' + d.labels.revenueToday + '</div></div>'));
+    var mtd = el('<div class="admin-dash-stat-tile" role="listitem"><div class="stat-label">Revenue this month</div><div class="stat-value-row" style="display:flex;align-items:baseline;flex-wrap:wrap;gap:6px;"><span class="stat-value" style="font-size:22px;">' + d.labels.revenueMtd + '</span><span class="' + cmpCls + '">' + arrow + ' ' + Math.abs(cmp) + '% vs last month</span></div></div>'));
+    grid.appendChild(mtd);
+    grid.appendChild(el('<div class="admin-dash-stat-tile" role="listitem"><div class="stat-label">Active today</div><div class="stat-value">' + d.activeToday + '</div></div>'));
+    grid.appendChild(el('<div class="admin-dash-stat-tile" role="listitem"><div class="stat-label">Needs action</div><div class="stat-value">' + d.needsAction + '</div></div>'));
+    document.getElementById('rep-glance-loading').style.display = 'none';
+    grid.style.display = 'grid';
+  }
+
+  function renderSr(d) {
+    var wrap = document.getElementById('rep-sr-wrap');
+    wrap.innerHTML = '';
+    if (d.serviceRequestsEmpty) {
+      wrap.appendChild(el('<p class="rep-muted" style="margin:0;">No service requests need attention right now.</p>'));
+    } else {
+      function table(rows, cols, actions) {
+        var h = '<table class="data" style="width:100%;min-width:640px;"><thead><tr>';
+        cols.forEach(function (c) { h += '<th>' + c + '</th>'; });
+        h += '</tr></thead><tbody>';
+        rows.forEach(function (r) { h += '<tr>' + r + '</tr>'; });
+        h += '</tbody></table>';
+        return h;
+      }
+      if (d.awaitingAssign.length) {
+        wrap.appendChild(el('<div class="rep-subhead">Awaiting assignment</div>'));
+        var ra = d.awaitingAssign.map(function (r) {
+          var act = '<a class="btn btn-sm btn-primary" href="/admin/service-requests/' + r.id + '">Assign</a>';
+          return '<td>' + r.member_name + '</td><td>' + r.service_name + '</td><td>' + r.submitted_label + '</td><td>' + r.days_waiting + '</td><td>' + act + '</td>';
+        });
+        wrap.appendChild(el(table(ra, ['Member', 'Service', 'Submitted', 'Days waiting', 'Action'])));
+      }
+      if (d.awaitingMember.length) {
+        wrap.appendChild(el('<div class="rep-subhead">Awaiting member action</div>'));
+        var rb = d.awaitingMember.map(function (r) {
+          var btn = canMutate
+            ? '<button type="button" class="btn btn-sm rep-remind-sr" data-id="' + r.id + '">Send reminder</button>'
+            : '—';
+          return '<td>' + r.member_name + '</td><td>' + r.service_name + '</td><td>' + r.staff_note + '</td><td>' + r.days_waiting + '</td><td>' + btn + '</td>';
+        });
+        wrap.appendChild(el(table(rb, ['Member', 'Service', 'What is needed', 'Days waiting', 'Action'])));
+      }
+      if (d.overdue.length) {
+        wrap.appendChild(el('<div class="rep-subhead">Overdue</div>'));
+        var rc = d.overdue.map(function (r) {
+          return '<td>' + r.member_name + '</td><td>' + r.service_name + '</td><td>' + r.consultant + '</td><td>' + r.days_overdue + '</td><td><a class="btn btn-sm" href="/admin/service-requests/' + r.id + '">View</a></td>';
+        });
+        wrap.appendChild(el(table(rc, ['Member', 'Service', 'Consultant', 'Days overdue', 'Action'])));
+      }
+    }
+    document.getElementById('rep-sr-loading').style.display = 'none';
+    wrap.style.display = 'block';
+    wrap.querySelectorAll('.rep-remind-sr').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        btn.disabled = true;
+        postForm('/admin/reports/service-requests/' + btn.getAttribute('data-id') + '/remind-member').then(function () {
+          btn.textContent = 'Sent';
+        }).catch(function () { btn.disabled = false; });
+      });
+    });
+  }
+
+  function invoiceTable(rows) {
+    if (!rows.length) return '<p class="rep-muted">None.</p>';
+    var h = '<table class="data" style="width:100%;min-width:640px;"><thead><tr><th>Member</th><th>Invoice</th><th>Description</th><th>Amount</th><th>Actions</th></tr></thead><tbody>';
+    rows.forEach(function (r) {
+      var pay = '<a class="section-link" href="/admin/invoices/' + r.id + '">Pay Now</a>';
+      var rem = canMutate
+        ? ' <button type="button" class="link-btn rep-remind-inv" data-id="' + r.id + '" style="margin-left:8px;">Send Reminder</button>'
+        : '';
+      h += '<tr><td>' + r.member_name + '</td><td>' + r.invoice_number + '</td><td>' + (r.line_desc || '—') + '</td><td>' + r.amount_label + '</td><td>' + pay + rem + '</td></tr>';
+    });
+    h += '</tbody></table>';
+    return h;
+  }
+
+  function renderPay(d) {
+    document.getElementById('rep-outstanding-big').textContent = d.labels.outstanding;
+    document.getElementById('rep-due-today').innerHTML = invoiceTable(d.dueToday);
+    document.getElementById('rep-due-week').innerHTML = invoiceTable(d.dueWeek);
+    document.getElementById('rep-pay-loading').style.display = 'none';
+    document.getElementById('rep-pay-wrap').style.display = 'block';
+    document.querySelectorAll('.rep-remind-inv').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        btn.disabled = true;
+        postForm('/admin/reports/invoices/' + btn.getAttribute('data-id') + '/remind').then(function () {
+          btn.textContent = 'Sent';
+        }).catch(function () { btn.disabled = false; });
+      });
+    });
+  }
+
+  var plan = 'all';
+  var searchQ = '';
+  var searchTimer;
+
+  function loadMembers() {
+    document.getElementById('rep-members-loading').style.display = 'block';
+    document.getElementById('rep-members-wrap').style.display = 'none';
+    var u = '/admin/reports/api/operations-members?plan=' + encodeURIComponent(plan) + '&q=' + encodeURIComponent(searchQ);
+    fetchJson(u).then(function (d) {
+      document.getElementById('rep-member-count').textContent = d.count + ' result' + (d.count === 1 ? '' : 's');
+      var tb = document.getElementById('rep-members-body');
+      tb.innerHTML = '';
+      d.rows.forEach(function (r) {
+        var cls = r.row_state === 'overdue' ? 'rep-row-overdue' : r.row_state === 'renew' ? 'rep-row-renew' : 'rep-row-ok';
+        var tr = el('<tr class="' + cls + '"><td>' + r.member_name + '</td><td>' + r.plan_name + '</td><td>' + (r.unit_label || '') + '</td><td>' + r.started_label + '</td><td>' + r.renewal_label + '</td><td>' + r.days_remaining + '</td><td>' + r.outstanding_label + '</td><td><a class="section-link" href="' + r.pay_href + '">Pay</a> · <a class="section-link" href="' + r.view_href + '">View</a></td></tr>');
+        tb.appendChild(tr);
+      });
+      document.getElementById('rep-members-loading').style.display = 'none';
+      document.getElementById('rep-members-wrap').style.display = 'block';
+    });
+  }
+
+  document.querySelectorAll('.rep-plan-chip').forEach(function (chip) {
+    chip.addEventListener('click', function () {
+      document.querySelectorAll('.rep-plan-chip').forEach(function (c) { c.classList.remove('active'); });
+      chip.classList.add('active');
+      plan = chip.getAttribute('data-plan') || 'all';
+      loadMembers();
+    });
+  });
+  document.getElementById('rep-member-search').addEventListener('input', function () {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(function () {
+      searchQ = document.getElementById('rep-member-search').value.trim();
+      loadMembers();
+    }, 280);
+  });
+
+  fetchJson('/admin/reports/api/operations-dashboard').then(function (d) {
+    renderGlance(d);
+    renderSr(d);
+    renderPay(d);
+  }).catch(function () {
+    document.querySelectorAll('.rep-loading').forEach(function (x) { x.textContent = 'Could not load data.'; });
+  });
+  loadMembers();
+})();
+</script>
