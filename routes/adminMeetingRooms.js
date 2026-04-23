@@ -16,6 +16,9 @@ const { nextInvoiceNumber } = require('../lib/invoiceNumber');
 const { computeRoomQuote, portalTz } = require('../lib/roomQuote');
 const { assertSlotBookable } = require('../lib/roomSlot');
 const { loadDiscountTiers, createRoomBookingWithInvoice } = require('../lib/roomBookingInvoice');
+const { getDayTimeline } = require('../lib/roomDayTimeline');
+const { getMonthDayStates } = require('../lib/roomMonthAvailability');
+const { getAvailableCreditMinutes, splitQuoteWithCredits } = require('../lib/meetingCredits');
 const { notifyMember } = require('../lib/notifications');
 const { sendServiceRequestInvoiceNotifications } = require('../lib/serviceRequestInvoice');
 
@@ -263,6 +266,155 @@ router.get('/meeting-rooms/calendar.json', async (req, res) => {
   });
 });
 
+/** Member-parity calendar APIs for admin manual booking UI */
+router.get('/meeting-rooms/bookings/new', async (req, res) => {
+  const prefillMemberId = isUuid(String(req.query.member_id || '').trim())
+    ? String(req.query.member_id).trim()
+    : '';
+  let roomId = String(req.query.room_id || '').trim();
+  const { rows: rooms } = await pool.query(
+    `SELECT id, name FROM meeting_rooms WHERE deleted_at IS NULL AND active = true ORDER BY sort_order, name`
+  );
+  if (!rooms.length) {
+    return res.redirect('/admin/meeting-rooms/bookings?err=norooms');
+  }
+  if (!isUuid(roomId) || !rooms.some((r) => String(r.id) === roomId)) {
+    roomId = rooms[0].id;
+  }
+  const { rows } = await pool.query(
+    `SELECT * FROM meeting_rooms WHERE id = $1::uuid AND active = true AND deleted_at IS NULL`,
+    [roomId]
+  );
+  const room = rows[0];
+  if (!room) return res.redirect('/admin/meeting-rooms/bookings?err=room');
+  const tiers = await loadDiscountTiers(pool, roomId);
+  const { rows: md } = await pool.query(
+    `SELECT to_char((now() AT TIME ZONE $1::text)::date, 'YYYY-MM-DD') AS min_date`,
+    [portalTz()]
+  );
+  res.render('admin/meeting-room-book-calendar', {
+    layout: 'layouts/admin',
+    title: 'New room booking',
+    pageSub: 'Same calendar experience as members — pick a day, then a time range',
+    room,
+    rooms,
+    tiers,
+    formatNgn,
+    prefillMemberId,
+    minBookDate: md[0].min_date,
+    portalTzName: portalTz(),
+    query: req.query,
+  });
+});
+
+router.get('/meeting-rooms/rooms/:roomId/availability-month', async (req, res) => {
+  const roomId = req.params.roomId;
+  if (!isUuid(roomId)) return res.status(404).json({ ok: false, error: 'not_found' });
+  const y = Math.floor(Number(req.query.year));
+  const mon = Math.floor(Number(req.query.month));
+  if (!Number.isFinite(y) || y < 2000 || y > 2100 || !Number.isFinite(mon) || mon < 1 || mon > 12) {
+    return res.status(400).json({ ok: false, error: 'bad_month' });
+  }
+  const { rows: rm } = await pool.query(
+    `SELECT id FROM meeting_rooms WHERE id = $1::uuid AND active = true AND deleted_at IS NULL`,
+    [roomId]
+  );
+  if (!rm[0]) return res.status(404).json({ ok: false, error: 'not_found' });
+  const { rows: md } = await pool.query(
+    `SELECT to_char((now() AT TIME ZONE $1::text)::date, 'YYYY-MM-DD') AS min_date`,
+    [portalTz()]
+  );
+  try {
+    const out = await getMonthDayStates(pool, roomId, y, mon, md[0].min_date);
+    return res.json({ ok: true, ...out });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ ok: false, error: 'server' });
+  }
+});
+
+router.get('/meeting-rooms/rooms/:roomId/day-blocks', async (req, res) => {
+  const roomId = req.params.roomId;
+  if (!isUuid(roomId)) return res.status(404).json({ ok: false, error: 'not_found' });
+  const date = String(req.query.date || '');
+  const { rows: rm } = await pool.query(
+    `SELECT id FROM meeting_rooms WHERE id = $1::uuid AND active = true AND deleted_at IS NULL`,
+    [roomId]
+  );
+  if (!rm[0]) return res.status(404).json({ ok: false, error: 'not_found' });
+  try {
+    const tl = await getDayTimeline(pool, roomId, date);
+    return res.json({ ok: true, date, ...tl });
+  } catch (e) {
+    if (e.code === 'BAD_DATE') return res.status(400).json({ ok: false, error: 'bad_date' });
+    console.error(e);
+    return res.status(500).json({ ok: false, error: 'server' });
+  }
+});
+
+router.get('/meeting-rooms/rooms/:roomId/quote', async (req, res) => {
+  const roomId = req.params.roomId;
+  if (!isUuid(roomId)) return res.status(404).json({ ok: false, error: 'not_found' });
+  const starts = new Date(String(req.query.starts_at || ''));
+  const durationMinutes = Math.max(1, Math.floor(Number(req.query.duration_minutes || 60)));
+  const fullDay = String(req.query.full_day || '') === '1';
+  if (Number.isNaN(starts.getTime())) {
+    return res.status(400).json({ ok: false, error: 'bad_start' });
+  }
+  const ends = new Date(starts.getTime() + durationMinutes * 60 * 1000);
+  const { rows: rm } = await pool.query(
+    `SELECT * FROM meeting_rooms WHERE id = $1::uuid AND active = true AND deleted_at IS NULL`,
+    [roomId]
+  );
+  if (!rm[0]) return res.status(404).json({ ok: false, error: 'not_found' });
+  const tiers = await loadDiscountTiers(pool, roomId);
+  const quote = computeRoomQuote(
+    {
+      hourly_rate_cents: rm[0].hourly_rate_cents,
+      full_day_rate_cents: rm[0].full_day_rate_cents,
+      durationMinutes,
+    },
+    tiers,
+    { fullDay }
+  );
+  let bookable = true;
+  let bookableError = null;
+  try {
+    await assertSlotBookable(pool, roomId, starts, ends);
+  } catch (e) {
+    bookable = false;
+    bookableError = e.code || 'slot';
+  }
+  const memberQ = String(req.query.member_id || '').trim();
+  let credits = null;
+  if (
+    memberQ &&
+    isUuid(memberQ) &&
+    rm[0].consumes_plan_credits !== false &&
+    quote.total_cents > 0
+  ) {
+    const bal = await getAvailableCreditMinutes(pool, memberQ);
+    const split = splitQuoteWithCredits(quote.total_cents, durationMinutes, bal.available, true);
+    credits = {
+      available_minutes: bal.available,
+      granted_minutes: bal.granted,
+      used_minutes: bal.used,
+      period_month: bal.period_month,
+      minutes_applied: split.credit_minutes_used,
+      value_cents: split.credit_value_cents,
+      payable_cents: split.payable_cents,
+    };
+  }
+  res.json({
+    ok: true,
+    bookable,
+    bookableError,
+    quote,
+    credits,
+    ends_at: ends.toISOString(),
+  });
+});
+
 router.get('/meeting-rooms/bookings', async (req, res) => {
   const status = String(req.query.status || '').trim();
   const roomId = String(req.query.room_id || '').trim();
@@ -307,10 +459,27 @@ router.get('/meeting-rooms/bookings', async (req, res) => {
 router.post('/meeting-rooms/bookings/manual', requireValidCsrf, async (req, res) => {
   const member_id = String(req.body.member_id || '').trim();
   const room_id = String(req.body.room_id || '').trim();
-  const starts_at = new Date(String(req.body.starts_at || ''));
-  const ends_at = new Date(String(req.body.ends_at || ''));
   const purpose = String(req.body.purpose || '').trim() || null;
   const bill = req.body.create_invoice === '1' || req.body.create_invoice === 'on';
+  const fullDay = String(req.body.full_day || '') === '1';
+  const durRaw = req.body.duration_minutes;
+  const useDuration =
+    durRaw !== undefined && durRaw !== null && String(durRaw).trim() !== '';
+
+  let starts_at;
+  let ends_at;
+  if (useDuration) {
+    starts_at = new Date(String(req.body.starts_at || ''));
+    const durationMinutes = Math.max(1, Math.floor(Number(durRaw || 60)));
+    if (Number.isNaN(starts_at.getTime())) {
+      return res.redirect('/admin/meeting-rooms/bookings?err=time');
+    }
+    ends_at = new Date(starts_at.getTime() + durationMinutes * 60 * 1000);
+  } else {
+    starts_at = new Date(String(req.body.starts_at || ''));
+    ends_at = new Date(String(req.body.ends_at || ''));
+  }
+
   if (!isUuid(member_id) || !isUuid(room_id)) {
     return res.redirect('/admin/meeting-rooms/bookings?err=ids');
   }
@@ -342,6 +511,7 @@ router.post('/meeting-rooms/bookings/manual', requireValidCsrf, async (req, res)
         purpose,
         invoiceNumber: invNo,
         dueDateStr: dueStr,
+        fullDay,
       });
       await client.query(
         `UPDATE room_bookings SET created_by_admin = true, updated_at = now() WHERE id = $1::uuid`,

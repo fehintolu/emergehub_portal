@@ -1,0 +1,714 @@
+<% if (typeof query !== 'undefined' && query.err) { %>
+  <div class="alert alert-error">
+    <% if (query.err === 'slot') { %>That slot is not available. Pick another time.<% } %>
+    <% if (query.err === 'book') { %>We could not complete the booking. Please try again.<% } %>
+    <% if (query.err === 'time') { %>Choose a valid time range.<% } %>
+  </div>
+<% } %>
+
+<p class="page-lead" style="margin-top:0;"><a href="/admin/meeting-rooms">← Hub</a> · <a href="/admin/meeting-rooms/bookings">All bookings</a></p>
+
+<div class="card" style="margin-bottom:16px;">
+  <form method="get" action="/admin/meeting-rooms/bookings/new" style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;">
+    <div class="form-row" style="margin:0;">
+      <label>Room</label>
+      <select name="room_id">
+        <% (typeof rooms !== 'undefined' ? rooms : []).forEach(function (r) { %>
+          <option value="<%= r.id %>" <%= String(room.id) === String(r.id) ? 'selected' : '' %>><%= r.name %></option>
+        <% }); %>
+      </select>
+    </div>
+    <div class="form-row" style="margin:0;">
+      <label>Member ID</label>
+      <input name="member_id" id="mrb-admin-member-id" type="text" placeholder="Member UUID" style="min-width:280px;" value="<%= typeof prefillMemberId !== 'undefined' && prefillMemberId ? prefillMemberId : '' %>" autocomplete="off" />
+    </div>
+    <button type="submit" class="btn btn-secondary">Load room / member</button>
+  </form>
+  <p class="page-lead" style="margin:8px 0 0;font-size:13px;">Same calendar and slot rules as the member portal. Estimates include tier discounts and <strong>plan meeting credits</strong> for the member above.</p>
+</div>
+
+<div class="card" style="margin-bottom:16px;">
+  <% if (room.description) { %><p class="page-lead" style="margin-top:0;"><%= room.description %></p><% } %>
+  <p style="margin:0;">Hourly rate: <strong><%= formatNgn(room.hourly_rate_cents) %></strong></p>
+</div>
+
+<div class="mrb-root" id="mrb-root" data-room-id="<%= room.id %>">
+  <div class="mrb-slot-err alert alert-error" id="mrb-slot-err" style="display:none;margin-bottom:16px;" role="alert"></div>
+
+  <section class="card mrb-stage1" id="mrb-stage1" aria-label="Choose a day">
+    <div class="mrb-cal-head">
+      <button type="button" class="btn btn-secondary mrb-cal-nav" id="mrb-cal-prev" aria-label="Previous month">‹</button>
+      <h3 class="mrb-cal-title" id="mrb-cal-title" style="margin:0;font-size:16px;">Month</h3>
+      <button type="button" class="btn btn-secondary mrb-cal-nav" id="mrb-cal-next" aria-label="Next month">›</button>
+    </div>
+    <div class="mrb-cal-legend">
+      <span><i class="mrb-dot mrb-dot--full"></i> Open</span>
+      <span><i class="mrb-dot mrb-dot--partial"></i> Some bookings</span>
+      <span><i class="mrb-dot mrb-dot--unavailable"></i> Unavailable</span>
+    </div>
+    <div class="mrb-cal-weekdays" aria-hidden="true">
+      <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+    </div>
+    <div class="mrb-cal-grid" id="mrb-cal-grid"></div>
+  </section>
+
+  <div class="mrb-strip card" id="mrb-strip" style="display:none;">
+    <div class="mrb-strip-inner">
+      <span class="mrb-strip-date" id="mrb-strip-date"></span>
+      <button type="button" class="btn btn-ghost mrb-strip-change" id="mrb-strip-change">Change</button>
+    </div>
+  </div>
+
+  <section class="mrb-stage2-wrap" id="mrb-stage2-wrap" style="display:none;">
+    <div class="mrb-layout">
+      <div class="mrb-timeline-card card">
+        <h3 class="page-title" style="margin-top:0;font-size:16px;">Select time</h3>
+        <p class="page-lead" style="margin-bottom:12px;">Tap start, then end (30-minute blocks). Minimum 1 hour. You cannot cross blocked or booked time.</p>
+        <div class="mrb-timeline" id="mrb-timeline" aria-live="polite"></div>
+      </div>
+      <aside class="mrb-price-panel card" id="mrb-price-panel" aria-label="Price estimate">
+        <h3 class="page-title" style="margin-top:0;font-size:15px;">Estimate</h3>
+        <div id="mrb-price-body">
+          <p class="mrb-price-line" id="mrb-price-duration">Duration: —</p>
+          <p class="mrb-price-line" id="mrb-price-base">Base: —</p>
+          <p class="mrb-price-line" id="mrb-price-discount" style="display:none;">Discount: —</p>
+          <p class="mrb-price-line" id="mrb-price-credits" style="display:none;">Plan credits: —</p>
+          <p class="mrb-price-total" id="mrb-price-total">Total: —</p>
+          <p class="page-lead mrb-nudge" id="mrb-nudge" style="display:none;margin-top:12px;"></p>
+        </div>
+        <button type="button" class="btn btn-primary mrb-confirm2" id="mrb-confirm2" disabled>Continue</button>
+      </aside>
+    </div>
+  </section>
+
+  <div class="mrb-msticky" id="mrb-msticky" style="display:none;">
+    <button type="button" class="mrb-msticky-expand" id="mrb-msticky-expand" aria-expanded="false" aria-controls="mrb-msticky-detail">
+      <span id="mrb-msticky-sum">—</span>
+      <span class="mrb-msticky-chev" aria-hidden="true">▲</span>
+    </button>
+    <div class="mrb-msticky-detail" id="mrb-msticky-detail" hidden>
+      <div id="mrb-msticky-breakdown"></div>
+    </div>
+    <button type="button" class="btn btn-primary mrb-msticky-btn" id="mrb-msticky-btn" disabled>Continue</button>
+  </div>
+
+  <div class="mrb-s3-backdrop" id="mrb-s3-backdrop" style="display:none;" aria-hidden="true"></div>
+  <div class="mrb-s3-panel card" id="mrb-s3-panel" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="mrb-s3-title">
+    <h3 id="mrb-s3-title" class="page-title" style="margin-top:0;">Confirm booking</h3>
+    <div class="mrb-s3-summary" id="mrb-s3-summary"></div>
+    <form id="mrb-admin-submit-form" method="post" action="/admin/meeting-rooms/bookings/manual">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+      <input type="hidden" name="room_id" value="<%= room.id %>" />
+      <input type="hidden" name="member_id" id="mrb-admin-member-hidden" />
+      <input type="hidden" name="starts_at" id="mrb-admin-starts-at" />
+      <input type="hidden" name="duration_minutes" id="mrb-admin-duration-min" />
+      <input type="hidden" name="full_day" value="0" id="mrb-admin-full-day" />
+      <div class="form-row">
+        <label for="mrb-purpose">Purpose (optional)</label>
+        <textarea id="mrb-purpose" name="purpose" rows="2" maxlength="2000"></textarea>
+      </div>
+      <div class="form-row">
+        <label><input type="checkbox" name="create_invoice" value="1" checked /> Create invoice (credits first; member pays the remainder)</label>
+      </div>
+      <div class="cta-row" style="margin-bottom:0;">
+        <button type="button" class="btn btn-secondary" id="mrb-s3-back">Back</button>
+        <button type="submit" class="btn btn-primary" id="mrb-s3-submit">Create booking</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<style>
+.mrb-root { --mrb-brand: var(--brand); --mrb-accent: var(--accent); --mrb-border: var(--border); --mrb-muted: var(--text-secondary); }
+.mrb-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.mrb-cal-nav { min-width: 40px; padding: 8px 12px; font-size: 18px; line-height: 1; }
+.mrb-cal-legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--text-secondary); margin-bottom: 10px; }
+.mrb-cal-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.mrb-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.mrb-dot--full { background: var(--green); }
+.mrb-dot--partial { background: var(--orange); }
+.mrb-dot--unavailable { background: #d8d3de; }
+.mrb-cal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; font-size: 11px; font-weight: 600; color: var(--text-muted); text-align: center; margin-bottom: 6px; }
+.mrb-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.mrb-cal-cell { aspect-ratio: 1; min-height: 36px; border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; cursor: default; background: #fff; position: relative; }
+.mrb-cal-cell--muted { opacity: 0.25; pointer-events: none; background: var(--surface-2); }
+.mrb-cal-cell--unavailable { background: #f0eef1; color: var(--text-muted); cursor: not-allowed; }
+.mrb-cal-cell--pickable { cursor: pointer; transition: transform 0.12s ease, box-shadow 0.12s ease; }
+.mrb-cal-cell--pickable:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.mrb-cal-cell--selected { outline: 2px solid var(--brand); outline-offset: 1px; background: rgba(92, 10, 60, 0.08); color: var(--brand); }
+.mrb-cal-cell-dot { position: absolute; bottom: 5px; left: 50%; transform: translateX(-50%); width: 6px; height: 6px; border-radius: 50%; }
+.mrb-strip { padding: 12px 16px; margin-bottom: 16px; }
+.mrb-strip-inner { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.mrb-strip-date { font-weight: 600; font-size: 14px; }
+.mrb-layout { display: grid; grid-template-columns: 1fr 280px; gap: 20px; align-items: start; }
+.mrb-timeline { max-height: 70vh; overflow-y: auto; border: 1px solid var(--border-strong); border-radius: 8px; background: #fff; }
+.mrb-tl-row { display: grid; grid-template-columns: 72px 1fr; gap: 8px; align-items: stretch; min-height: 44px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.mrb-tl-row:last-child { border-bottom: none; }
+.mrb-tl-time { padding: 10px 8px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.mrb-tl-block { margin: 3px 8px 3px 0; border-radius: 6px; border: 1px solid transparent; display: flex; align-items: center; padding: 0 10px; font-weight: 500; cursor: default; }
+.mrb-tl-block--open { background: #fff; border-color: var(--border); cursor: pointer; }
+.mrb-tl-block--open:hover { border-color: rgba(92, 10, 60, 0.35); }
+.mrb-tl-block--open.mrb-tl-sel { background: rgba(92, 10, 60, 0.12); border-color: var(--brand); color: var(--brand); }
+.mrb-tl-block--past { background: var(--surface-2); color: var(--text-muted); }
+.mrb-tl-block--block { background: #ececec; color: var(--text-muted); }
+.mrb-tl-block--booked { background: rgba(92, 10, 60, 0.7); color: #fff; border-color: rgba(92, 10, 60, 0.5); }
+.mrb-tl-block--pending { background: #fff4e6; color: #9a3412; border-color: rgba(234, 88, 12, 0.35); }
+.mrb-shake { animation: mrb-shake 0.45s ease; }
+@keyframes mrb-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+.mrb-price-line { font-size: 13px; margin: 6px 0; color: var(--text); }
+.mrb-price-total { font-size: 18px; font-weight: 700; margin-top: 12px; color: var(--brand); }
+.mrb-confirm2 { width: 100%; margin-top: 16px; }
+.mrb-msticky { display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 80; background: #fff; border-top: 1px solid var(--border-strong); box-shadow: 0 -4px 20px rgba(0,0,0,0.08); padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); flex-direction: column; gap: 8px; }
+.mrb-msticky-expand { width: 100%; text-align: left; background: transparent; border: none; font-family: var(--font); font-size: 14px; font-weight: 600; padding: 6px 0; cursor: pointer; display: flex; justify-content: space-between; align-items: center; color: var(--text); }
+.mrb-msticky-chev { font-size: 10px; color: var(--text-muted); transition: transform 0.15s ease; }
+.mrb-msticky-expand[aria-expanded="true"] .mrb-msticky-chev { transform: rotate(180deg); }
+.mrb-msticky-detail { font-size: 13px; color: var(--text-secondary); line-height: 1.5; padding-bottom: 4px; }
+.mrb-msticky-btn { width: 100%; }
+.mrb-s3-backdrop { position: fixed; inset: 0; background: rgba(24, 21, 26, 0.45); z-index: 90; }
+.mrb-s3-panel { position: fixed; z-index: 95; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(440px, calc(100vw - 32px)); max-height: min(560px, calc(100vh - 48px)); overflow-y: auto; padding: 22px; box-shadow: 0 12px 40px rgba(0,0,0,0.18); }
+.mrb-s3-summary { font-size: 14px; line-height: 1.55; margin-bottom: 16px; color: var(--text); }
+.mrb-s3-summary strong { color: var(--brand); }
+@media (max-width: 767px) {
+  .mrb-layout { grid-template-columns: 1fr; }
+  .mrb-price-panel { display: none; }
+  .mrb-msticky { display: flex; }
+  .mrb-s3-panel { left: 0; right: 0; top: auto; bottom: 0; transform: none; width: 100%; max-height: 60vh; border-radius: 12px 12px 0 0; max-width: none; }
+}
+@media (min-width: 768px) {
+  .mrb-msticky { display: none !important; }
+}
+</style>
+
+<script>
+(function () {
+  var roomId = <%- JSON.stringify(String(room.id)) %>;
+  var roomName = <%- JSON.stringify(String(room.name || 'Room')) %>;
+  var csrf = <%- JSON.stringify(typeof csrfToken !== 'undefined' ? csrfToken : '') %>;
+  var apiBase = '/admin/meeting-rooms/rooms';
+  var hourlyCents = <%- JSON.stringify(Number(room.hourly_rate_cents) || 0) %>;
+  var tiers = <%- JSON.stringify(tiers || []) %>;
+  var minBookDate = <%- JSON.stringify(String(typeof minBookDate !== 'undefined' ? minBookDate : '')) %>;
+  var tzName = <%- JSON.stringify(String(typeof portalTzName !== 'undefined' ? portalTzName : 'Africa/Lagos')) %>;
+  var consumesCredits = <%- JSON.stringify(room.consumes_plan_credits !== false) %>;
+
+  var monthCache = {};
+  var dayCache = {};
+  var nowParts = (function () {
+    var p = minBookDate.split('-');
+    return { y: parseInt(p[0], 10), m: parseInt(p[1], 10) };
+  })();
+  var calY = nowParts.y;
+  var calM = nowParts.m;
+  var selectedDate = null;
+  var daySlots = [];
+  var anchorIdx = null;
+  var rangeEndIdx = null;
+  var quoteSeq = 0;
+  var lastSrv = null;
+
+  function pad2(n) { return String(n).padStart(2, '0'); }
+  function fmtNgn(cents) {
+    var n = Number(cents) || 0;
+    return new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(n / 100);
+  }
+  function pickDiscountTier(ts, durationHours) {
+    var dh = Number(durationHours) || 0;
+    var qual = (ts || []).filter(function (t) {
+      return t && t.active !== false && (Number(t.min_hours) || 0) <= dh + 1e-9;
+    });
+    if (!qual.length) return null;
+    return qual.reduce(function (best, t) {
+      if (!best) return t;
+      var pct = Number(t.discount_percent) || 0;
+      var bestPct = Number(best.discount_percent) || 0;
+      if (pct > bestPct) return t;
+      if (pct === bestPct && (Number(t.min_hours) || 0) > (Number(best.min_hours) || 0)) return t;
+      return best;
+    }, null);
+  }
+  function computeRoomQuote(durationMinutes) {
+    var dm = Math.max(1, Math.floor(Number(durationMinutes) || 0));
+    var durationHours = dm / 60;
+    var hourly = Number(hourlyCents) || 0;
+    var base = Math.round((hourly * dm) / 60);
+    var tier = pickDiscountTier(tiers, durationHours);
+    var pct = tier ? Number(tier.discount_percent) || 0 : 0;
+    var discount = Math.round((base * pct) / 100);
+    var total = Math.max(0, base - discount);
+    return {
+      durationMinutes: dm,
+      durationHours: durationHours,
+      base_cents: base,
+      discount_cents: discount,
+      total_cents: total,
+      discount_tier_label: tier ? (tier.label || (pct + '% discount')) : null,
+      discount_percent: pct,
+      tierMinHours: tier ? Number(tier.min_hours) || 0 : 0
+    };
+  }
+  function nextTierNudge(durationMinutes, q) {
+    var dh = durationMinutes / 60;
+    var sorted = (tiers || []).filter(function (t) { return t && t.active !== false; }).slice().sort(function (a, b) {
+      return (Number(a.min_hours) || 0) - (Number(b.min_hours) || 0);
+    });
+    for (var i = 0; i < sorted.length; i++) {
+      var th = Number(sorted[i].min_hours) || 0;
+      if (th <= dh + 1e-9) continue;
+      var targetMin = Math.max(1, Math.round(th * 60));
+      var gapMin = targetMin - durationMinutes;
+      if (gapMin <= 0 || gapMin > 60) return null;
+      var q2 = computeRoomQuote(targetMin);
+      var save = q.total_cents - q2.total_cents;
+      var nextPct = Number(sorted[i].discount_percent) || 0;
+      if (save <= 0 && nextPct <= q.discount_percent) return null;
+      return 'Book ' + gapMin + ' more minute' + (gapMin === 1 ? '' : 's') + ' to reach the ' + th + '-hour tier (' + nextPct + '% off). Estimated save on this length: ' + fmtNgn(Math.max(0, save)) + '.';
+    }
+    return null;
+  }
+
+  var el = {
+    grid: document.getElementById('mrb-cal-grid'),
+    title: document.getElementById('mrb-cal-title'),
+    prev: document.getElementById('mrb-cal-prev'),
+    next: document.getElementById('mrb-cal-next'),
+    strip: document.getElementById('mrb-strip'),
+    stripDate: document.getElementById('mrb-strip-date'),
+    stripChange: document.getElementById('mrb-strip-change'),
+    s2: document.getElementById('mrb-stage2-wrap'),
+    tl: document.getElementById('mrb-timeline'),
+    priceDur: document.getElementById('mrb-price-duration'),
+    priceBase: document.getElementById('mrb-price-base'),
+    priceDisc: document.getElementById('mrb-price-discount'),
+    priceCredits: document.getElementById('mrb-price-credits'),
+    priceTot: document.getElementById('mrb-price-total'),
+    nudge: document.getElementById('mrb-nudge'),
+    btn2: document.getElementById('mrb-confirm2'),
+    msticky: document.getElementById('mrb-msticky'),
+    mexp: document.getElementById('mrb-msticky-expand'),
+    msum: document.getElementById('mrb-msticky-sum'),
+    mdet: document.getElementById('mrb-msticky-detail'),
+    mbreak: document.getElementById('mrb-msticky-breakdown'),
+    mbtn: document.getElementById('mrb-msticky-btn'),
+    s3b: document.getElementById('mrb-s3-backdrop'),
+    s3p: document.getElementById('mrb-s3-panel'),
+    s3sum: document.getElementById('mrb-s3-summary'),
+    s3back: document.getElementById('mrb-s3-back'),
+    purpose: document.getElementById('mrb-purpose'),
+    slotErr: document.getElementById('mrb-slot-err'),
+    stage1: document.getElementById('mrb-stage1')
+  };
+
+  function monthKey(y, m) { return y + '-' + pad2(m); }
+  async function fetchMonth(y, m) {
+    var k = monthKey(y, m);
+    if (monthCache[k]) return monthCache[k];
+    var res = await fetch(apiBase + '/' + roomId + '/availability-month?year=' + y + '&month=' + m);
+    var data = await res.json();
+    if (!data.ok) throw new Error('month');
+    monthCache[k] = data;
+    return data;
+  }
+  async function fetchDay(dateStr) {
+    if (dayCache[dateStr]) return dayCache[dateStr];
+    var res = await fetch(apiBase + '/' + roomId + '/day-blocks?date=' + encodeURIComponent(dateStr));
+    var data = await res.json();
+    if (!data.ok) throw new Error('day');
+    dayCache[dateStr] = data;
+    return data;
+  }
+
+  function renderCalendar(data) {
+    el.title.textContent = new Date(data.year, data.month - 1, 1).toLocaleString('en-GB', { month: 'long', year: 'numeric' });
+    el.grid.innerHTML = '';
+    var first = data.firstWeekday;
+    var dim = data.daysInMonth;
+    var days = data.days || {};
+    for (var i = 0; i < first; i++) {
+      var ph = document.createElement('div');
+      ph.className = 'mrb-cal-cell mrb-cal-cell--muted';
+      el.grid.appendChild(ph);
+    }
+    for (var d = 1; d <= dim; d++) {
+      var ds = data.year + '-' + pad2(data.month) + '-' + pad2(d);
+      var st = days[ds] || 'unavailable';
+      var cell = document.createElement('button');
+      cell.type = 'button';
+      cell.className = 'mrb-cal-cell';
+      cell.textContent = String(d);
+      cell.dataset.date = ds;
+      if (st === 'unavailable') {
+        cell.className += ' mrb-cal-cell--unavailable';
+        cell.disabled = true;
+      } else {
+        cell.className += ' mrb-cal-cell--pickable';
+        var dot = document.createElement('i');
+        dot.className = 'mrb-cal-cell-dot mrb-dot--' + (st === 'full' ? 'full' : 'partial');
+        cell.appendChild(dot);
+      }
+      if (selectedDate === ds) cell.classList.add('mrb-cal-cell--selected');
+      el.grid.appendChild(cell);
+    }
+    var totalCells = first + dim;
+    var rem = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7);
+    for (var j = 0; j < rem; j++) {
+      var ph2 = document.createElement('div');
+      ph2.className = 'mrb-cal-cell mrb-cal-cell--muted';
+      el.grid.appendChild(ph2);
+    }
+  }
+
+  async function loadMonth(y, m) {
+    var data = await fetchMonth(y, m);
+    renderCalendar(data);
+  }
+
+  el.prev.addEventListener('click', function () {
+    calM -= 1;
+    if (calM < 1) { calM = 12; calY -= 1; }
+    loadMonth(calY, calM).catch(function () { alert('Could not load month.'); });
+  });
+  el.next.addEventListener('click', function () {
+    calM += 1;
+    if (calM > 12) { calM = 1; calY += 1; }
+    loadMonth(calY, calM).catch(function () { alert('Could not load month.'); });
+  });
+
+  el.grid.addEventListener('click', function (ev) {
+    var btn = ev.target.closest('.mrb-cal-cell--pickable');
+    if (!btn || !btn.dataset.date) return;
+    selectedDate = btn.dataset.date;
+    openDay(selectedDate).catch(function () { alert('Could not load that day.'); });
+  });
+
+  function labelDate(ds) {
+    try {
+      return new Date(ds + 'T12:00:00').toLocaleDateString('en-GB', { timeZone: tzName, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+    } catch (e) { return ds; }
+  }
+  function labelTime(iso) {
+    try {
+      return new Date(iso).toLocaleTimeString('en-GB', { timeZone: tzName, hour: 'numeric', minute: '2-digit' });
+    } catch (e) { return iso; }
+  }
+
+  function rangeOpenOnly(a, b) {
+    var lo = Math.min(a, b);
+    var hi = Math.max(a, b);
+    for (var i = lo; i <= hi; i++) {
+      if (!daySlots[i] || daySlots[i].state !== 'open') return false;
+    }
+    return true;
+  }
+
+  function renderTimeline() {
+    el.tl.innerHTML = '';
+    daySlots.forEach(function (slot, idx) {
+      var row = document.createElement('div');
+      row.className = 'mrb-tl-row';
+      var t = document.createElement('div');
+      t.className = 'mrb-tl-time';
+      t.textContent = labelTime(slot.starts_at);
+      var b = document.createElement('div');
+      b.className = 'mrb-tl-block mrb-tl-block--' + slot.state;
+      b.dataset.idx = String(idx);
+      if (slot.state === 'block') b.textContent = 'Blocked';
+      else if (slot.state === 'booked') b.textContent = 'Booked';
+      else if (slot.state === 'pending') b.textContent = 'Pending payment';
+      else if (slot.state === 'past') b.textContent = '—';
+      else b.textContent = 'Available';
+      row.appendChild(t);
+      row.appendChild(b);
+      el.tl.appendChild(row);
+    });
+  }
+
+  function updateSelectionVisual() {
+    el.tl.querySelectorAll('.mrb-tl-block').forEach(function (b) {
+      b.classList.remove('mrb-tl-sel');
+      var idx = parseInt(b.dataset.idx, 10);
+      if (anchorIdx !== null && rangeEndIdx !== null) {
+        var lo = Math.min(anchorIdx, rangeEndIdx);
+        var hi = Math.max(anchorIdx, rangeEndIdx);
+        if (idx >= lo && idx <= hi && daySlots[idx].state === 'open') b.classList.add('mrb-tl-sel');
+      } else if (anchorIdx !== null && idx === anchorIdx) {
+        b.classList.add('mrb-tl-sel');
+      }
+    });
+  }
+
+  function shake() {
+    el.tl.classList.add('mrb-shake');
+    setTimeout(function () { el.tl.classList.remove('mrb-shake'); }, 500);
+  }
+
+  function selectionMinutes() {
+    if (anchorIdx === null || rangeEndIdx === null) return 0;
+    return (Math.abs(rangeEndIdx - anchorIdx) + 1) * 30;
+  }
+
+  function updatePricePanel() {
+    var dm = selectionMinutes();
+    var valid = dm >= 60 && anchorIdx !== null && rangeEndIdx !== null && rangeOpenOnly(anchorIdx, rangeEndIdx);
+    var q = valid ? computeRoomQuote(dm) : null;
+    if (!q) {
+      el.priceDur.textContent = 'Duration: —';
+      el.priceBase.textContent = 'Base: —';
+      el.priceDisc.style.display = 'none';
+      el.priceCredits.style.display = 'none';
+      el.priceTot.textContent = 'Total: —';
+      el.nudge.style.display = 'none';
+      el.btn2.disabled = true;
+      el.mbtn.disabled = true;
+      el.msum.textContent = 'Select a time range';
+      el.mbreak.innerHTML = '';
+      lastSrv = null;
+      return;
+    }
+    el.priceDur.textContent = 'Duration: ' + q.durationMinutes + ' min';
+    el.priceBase.textContent = 'Base: ' + fmtNgn(q.base_cents);
+    if (q.discount_cents > 0) {
+      el.priceDisc.style.display = 'block';
+      el.priceDisc.textContent = 'Discount' + (q.discount_tier_label ? ' (' + q.discount_tier_label + ')' : '') + ': −' + fmtNgn(q.discount_cents);
+    } else {
+      el.priceDisc.style.display = 'none';
+    }
+    el.priceCredits.style.display = 'none';
+    el.priceCredits.textContent = '';
+    el.priceTot.textContent = 'Total: ' + fmtNgn(q.total_cents);
+    var n = nextTierNudge(q.durationMinutes, q);
+    if (n) {
+      el.nudge.textContent = n;
+      el.nudge.style.display = 'block';
+    } else {
+      el.nudge.style.display = 'none';
+    }
+    el.btn2.disabled = false;
+    el.mbtn.disabled = false;
+    el.msum.textContent = q.durationMinutes + ' min · ' + fmtNgn(q.total_cents);
+    el.mbreak.innerHTML = '<p>' + el.priceDur.textContent + '</p><p>' + el.priceBase.textContent + '</p>' + (q.discount_cents > 0 ? '<p>' + el.priceDisc.textContent + '</p>' : '') + '<p><strong>' + el.priceTot.textContent + '</strong></p>' + (n ? '<p class="page-lead" style="margin-top:8px;">' + n + '</p>' : '');
+
+    if (consumesCredits) {
+      quoteSeq += 1;
+      var mySeq = quoteSeq;
+      var lo = Math.min(anchorIdx, rangeEndIdx);
+      var startIso = daySlots[lo].starts_at;
+      var dm = (Math.abs(rangeEndIdx - anchorIdx) + 1) * 30;
+      var midQ = (function () {
+        var elM = document.getElementById('mrb-admin-member-id');
+        return elM && elM.value ? String(elM.value).trim() : '';
+      })();
+      var quoteUrl =
+        apiBase +
+        '/' +
+        roomId +
+        '/quote?starts_at=' +
+        encodeURIComponent(startIso) +
+        '&duration_minutes=' +
+        encodeURIComponent(String(dm));
+      if (midQ) quoteUrl += '&member_id=' + encodeURIComponent(midQ);
+      fetch(quoteUrl)
+        .then(function (r) {
+          return r.json();
+        })
+        .then(function (data) {
+          if (mySeq !== quoteSeq) return;
+          if (!data || !data.ok || !data.quote) return;
+          lastSrv = { startIso: startIso, dm: dm, data: data };
+          var cr = data.credits;
+          if (cr && (cr.minutes_applied > 0 || (cr.available_minutes || 0) > 0)) {
+            el.priceCredits.style.display = 'block';
+            if (cr.minutes_applied > 0) {
+              el.priceCredits.textContent =
+                'Plan credits: ' +
+                cr.minutes_applied +
+                ' min applied (~' +
+                fmtNgn(cr.value_cents || 0) +
+                '). You pay: ' +
+                fmtNgn(cr.payable_cents != null ? cr.payable_cents : data.quote.total_cents) +
+                '.';
+            } else {
+              el.priceCredits.textContent =
+                'Plan credits available this month: ' + (cr.available_minutes || 0) + ' min (not applied to this slot yet).';
+            }
+          } else {
+            el.priceCredits.style.display = 'none';
+          }
+          var pay = data.quote.total_cents;
+          if (cr && cr.payable_cents != null) pay = cr.payable_cents;
+          el.priceTot.textContent = 'You pay: ' + fmtNgn(pay) + ' · List price: ' + fmtNgn(data.quote.total_cents);
+          el.msum.textContent = dm + ' min · ' + fmtNgn(pay);
+          el.mbreak.innerHTML =
+            '<p>' +
+            el.priceDur.textContent +
+            '</p><p>' +
+            el.priceBase.textContent +
+            '</p>' +
+            (q.discount_cents > 0 ? '<p>' + el.priceDisc.textContent + '</p>' : '') +
+            (el.priceCredits.style.display === 'block' ? '<p>' + el.priceCredits.textContent + '</p>' : '') +
+            '<p><strong>' +
+            el.priceTot.textContent +
+            '</strong></p>' +
+            (n ? '<p class="page-lead" style="margin-top:8px;">' + n + '</p>' : '');
+        })
+        .catch(function () {
+          if (mySeq !== quoteSeq) return;
+        });
+    } else {
+      lastSrv = null;
+    }
+  }
+
+  el.tl.addEventListener('click', function (ev) {
+    var block = ev.target.closest('.mrb-tl-block--open');
+    if (!block) return;
+    var idx = parseInt(block.dataset.idx, 10);
+    if (anchorIdx === null) {
+      anchorIdx = idx;
+      rangeEndIdx = null;
+      updateSelectionVisual();
+      updatePricePanel();
+      return;
+    }
+    if (rangeEndIdx === null) {
+      if (idx === anchorIdx) {
+        anchorIdx = null;
+        updateSelectionVisual();
+        updatePricePanel();
+        return;
+      }
+      if (!rangeOpenOnly(anchorIdx, idx)) {
+        shake();
+        return;
+      }
+      var dm = (Math.abs(idx - anchorIdx) + 1) * 30;
+      if (dm < 60) {
+        shake();
+        return;
+      }
+      rangeEndIdx = idx;
+      updateSelectionVisual();
+      updatePricePanel();
+      return;
+    }
+    anchorIdx = idx;
+    rangeEndIdx = null;
+    updateSelectionVisual();
+    updatePricePanel();
+  });
+
+  async function openDay(dateStr) {
+    var p = dateStr.split('-');
+    calY = parseInt(p[0], 10);
+    calM = parseInt(p[1], 10);
+    var data = await fetchDay(dateStr);
+    daySlots = data.slots || [];
+    anchorIdx = null;
+    rangeEndIdx = null;
+    el.strip.style.display = 'block';
+    el.stripDate.textContent = labelDate(dateStr);
+    el.s2.style.display = 'block';
+    el.stage1.style.display = 'none';
+    el.slotErr.style.display = 'none';
+    el.slotErr.textContent = '';
+    renderTimeline();
+    updateSelectionVisual();
+    updatePricePanel();
+    if (window.matchMedia('(max-width: 767px)').matches) {
+      el.msticky.style.display = 'flex';
+    } else {
+      el.msticky.style.display = 'none';
+    }
+  }
+
+  el.stripChange.addEventListener('click', function () {
+    el.stage1.style.display = 'block';
+    el.s2.style.display = 'none';
+    el.strip.style.display = 'none';
+    el.msticky.style.display = 'none';
+    selectedDate = null;
+    anchorIdx = null;
+    rangeEndIdx = null;
+    loadMonth(calY, calM).catch(function () {});
+  });
+
+  el.btn2.addEventListener('click', openStage3);
+  el.mbtn.addEventListener('click', openStage3);
+
+  function openStage3() {
+    if (el.btn2.disabled) return;
+    var lo = Math.min(anchorIdx, rangeEndIdx);
+    var hi = Math.max(anchorIdx, rangeEndIdx);
+    var startIso = daySlots[lo].starts_at;
+    var endIso = daySlots[hi].ends_at;
+    var dm = (hi - lo + 1) * 30;
+    var q = computeRoomQuote(dm);
+    var payC = q.total_cents;
+    var creditNote = '';
+    if (
+      lastSrv &&
+      lastSrv.startIso === startIso &&
+      lastSrv.dm === dm &&
+      lastSrv.data &&
+      lastSrv.data.credits &&
+      lastSrv.data.credits.payable_cents != null
+    ) {
+      payC = lastSrv.data.credits.payable_cents;
+      if (lastSrv.data.credits.minutes_applied > 0) {
+        creditNote =
+          '<p>Plan credits: ' +
+          lastSrv.data.credits.minutes_applied +
+          ' min (~' +
+          fmtNgn(lastSrv.data.credits.value_cents || 0) +
+          ')</p>';
+      }
+    }
+    el.s3sum.innerHTML =
+      '<p><strong>' + roomName.replace(/</g, '') + '</strong></p>' +
+      '<p>' + labelDate(selectedDate) + '</p>' +
+      '<p>' + labelTime(startIso) + ' – ' + labelTime(endIso) + ' · ' + dm + ' min</p>' +
+      '<p>Base ' + fmtNgn(q.base_cents) + (q.discount_cents > 0 ? ' · Discount −' + fmtNgn(q.discount_cents) : '') + '</p>' +
+      creditNote +
+      '<p>If invoiced, member pays <strong>' + fmtNgn(payC) + '</strong> (list ' + fmtNgn(q.total_cents) + '). Uncheck invoice for a free confirmed hold.</p>';
+    var midEl = document.getElementById('mrb-admin-member-id');
+    document.getElementById('mrb-admin-member-hidden').value = midEl && midEl.value ? String(midEl.value).trim() : '';
+    document.getElementById('mrb-admin-starts-at').value = startIso;
+    document.getElementById('mrb-admin-duration-min').value = String(dm);
+    el.s3b.style.display = 'block';
+    el.s3p.style.display = 'block';
+    el.purpose.value = '';
+  }
+  el.s3back.addEventListener('click', function () {
+    el.s3b.style.display = 'none';
+    el.s3p.style.display = 'none';
+  });
+  el.s3b.addEventListener('click', function () {
+    el.s3b.style.display = 'none';
+    el.s3p.style.display = 'none';
+  });
+
+  el.mexp.addEventListener('click', function () {
+    var open = el.mdet.hidden;
+    el.mdet.hidden = !open;
+    el.mexp.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+
+  document.getElementById('mrb-admin-submit-form').addEventListener('submit', function (ev) {
+    var hid = document.getElementById('mrb-admin-member-hidden').value.trim();
+    var ok =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(hid);
+    if (!ok) {
+      ev.preventDefault();
+      alert('Enter a valid member UUID in the form above, then open Confirm again.');
+      return false;
+    }
+  });
+
+  loadMonth(calY, calM).catch(function () { el.grid.textContent = 'Could not load calendar.'; });
+})();
+</script>

@@ -2,6 +2,8 @@
 <% if (typeof query !== 'undefined' && query.msg === 'manual') { %><div class="alert alert-success">Manual booking created (confirmed, no invoice).</div><% } %>
 <% if (typeof query !== 'undefined' && query.msg === 'manualinv') { %><div class="alert alert-success">Manual booking created with invoice (pending payment).</div><% } %>
 <% if (typeof query !== 'undefined' && query.err === 'slot') { %><div class="alert alert-error">Slot not available (overlap, block, or hours).</div><% } %>
+<% if (typeof query !== 'undefined' && query.err === 'norooms') { %><div class="alert alert-error">No active meeting rooms. Add a room first.</div><% } %>
+<% if (typeof query !== 'undefined' && query.err === 'room') { %><div class="alert alert-error">Room not found or inactive.</div><% } %>
 
 <form method="get" class="card" style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;">
   <div class="form-row" style="margin:0;">
@@ -26,25 +28,11 @@
 </form>
 
 <div class="card" style="margin-bottom:20px;">
-  <h3 style="margin-top:0;">Manual booking</h3>
-  <p class="page-lead">Paste a member UUID from <a href="/admin/members">Members</a>. Optional invoice uses the same pricing engine as the member portal.</p>
-  <form method="post" action="/admin/meeting-rooms/bookings/manual">
-    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-    <div class="form-row"><label>Member ID</label><input name="member_id" required placeholder="uuid" style="max-width:420px;" value="<%= typeof prefillMemberId !== 'undefined' && prefillMemberId ? prefillMemberId : '' %>" /></div>
-    <div class="form-row">
-      <label>Room</label>
-      <select name="room_id" required>
-        <% rooms.forEach(function (r) { %>
-          <option value="<%= r.id %>"><%= r.name %></option>
-        <% }); %>
-      </select>
-    </div>
-    <div class="form-row"><label>Start</label><input type="datetime-local" name="starts_at" required /></div>
-    <div class="form-row"><label>End</label><input type="datetime-local" name="ends_at" required /></div>
-    <div class="form-row"><label>Purpose</label><input name="purpose" /></div>
-    <div class="form-row"><label><input type="checkbox" name="create_invoice" value="1" /> Create invoice (pending payment + 2h deadline)</label></div>
-    <button type="submit" class="btn btn-secondary">Create</button>
-  </form>
+  <h3 style="margin-top:0;">New booking</h3>
+  <p class="page-lead">Use the <strong>same calendar and time picker</strong> as members (month grid, 30-minute timeline, tier pricing, plan credits in the estimate). You choose the member and whether to invoice.</p>
+  <p style="margin:0;">
+    <a class="btn btn-primary" href="/admin/meeting-rooms/bookings/new<%= typeof prefillMemberId !== 'undefined' && prefillMemberId ? ('?member_id=' + encodeURIComponent(prefillMemberId)) : '' %>">Open booking calendar</a>
+  </p>
 </div>
 
 <div class="card">

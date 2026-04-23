@@ -464,41 +464,9 @@
               <% if (!meetingRooms.length) { %>
                 <p class="amd-empty">No meeting rooms configured. Add rooms under Meeting rooms in admin.</p>
               <% } else { %>
-              <form method="post" action="/admin/meeting-rooms/bookings/manual">
-                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-                <input type="hidden" name="member_id" value="<%= m.id %>" />
-                <div class="amd-form-row">
-                  <div class="amd-field-row">
-                    <label class="amd-field-label">Room</label>
-                    <select class="amd-field-select" name="room_id" required>
-                      <% meetingRooms.forEach(function (room) { %>
-                        <option value="<%= room.id %>"><%= room.name %></option>
-                      <% }); %>
-                    </select>
-                  </div>
-                </div>
-                <div class="amd-form-row">
-                  <div class="amd-field-row">
-                    <label class="amd-field-label">Start</label>
-                    <input class="amd-field-input" type="datetime-local" name="starts_at" required />
-                  </div>
-                  <div class="amd-field-row">
-                    <label class="amd-field-label">End</label>
-                    <input class="amd-field-input" type="datetime-local" name="ends_at" required />
-                  </div>
-                </div>
-                <div class="amd-field-row">
-                  <label class="amd-field-label">Purpose (optional)</label>
-                  <input class="amd-field-input" type="text" name="purpose" placeholder="e.g. Client meeting" />
-                </div>
-                <div class="amd-form-actions">
-                  <label class="amd-check"><input type="checkbox" name="create_invoice" value="1" checked /> Create invoice (balance after credits)</label>
-                  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-                    <button type="submit" class="amd-btn-sm amd-btn-sm-primary">Create booking &amp; invoice</button>
-                  </div>
-                  <p class="amd-page-lead" style="margin:8px 0 0;font-size:11px;">For a free internal block without billing, use the hub booking page and uncheck the invoice option.</p>
-                </div>
-              </form>
+              <p class="amd-nf-sub" style="margin-bottom:12px;">Opens the <strong>member-style calendar</strong> with this member prefilled — same slots, pricing tiers, and credit estimates as the portal.</p>
+              <a class="amd-btn-sm amd-btn-sm-primary" href="/admin/meeting-rooms/bookings/new?member_id=<%= m.id %>" style="display:inline-flex;text-decoration:none;">Book a room (calendar)</a>
+              <p class="amd-page-lead" style="margin:10px 0 0;font-size:11px;">Uncheck “Create invoice” on the last step for a free confirmed hold.</p>
               <% } %>
             </div>
           </div>
