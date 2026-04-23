@@ -266,11 +266,56 @@ router.get('/meeting-rooms/calendar.json', async (req, res) => {
   });
 });
 
+/** Typeahead for booking calendar (name, email, business) */
+router.get('/meeting-rooms/members-suggest', async (req, res) => {
+  const raw = String(req.query.q || '').trim();
+  if (!raw) {
+    return res.json({ ok: true, members: [] });
+  }
+  if (isUuid(raw)) {
+    const { rows } = await pool.query(
+      `SELECT id, full_name, email, business_name
+       FROM members WHERE id = $1::uuid AND deleted_at IS NULL`,
+      [raw]
+    );
+    return res.json({ ok: true, members: rows });
+  }
+  if (raw.length < 2) {
+    return res.json({ ok: true, members: [] });
+  }
+  const like = `%${raw.toLowerCase()}%`;
+  const { rows } = await pool.query(
+    `SELECT id, full_name, email, business_name
+     FROM members
+     WHERE deleted_at IS NULL AND suspended_at IS NULL
+       AND (
+         lower(email) LIKE $1
+         OR lower(full_name) LIKE $1
+         OR lower(coalesce(business_name, '')) LIKE $1
+         OR lower(coalesce(contact_name, '')) LIKE $1
+       )
+     ORDER BY full_name ASC
+     LIMIT 25`,
+    [like]
+  );
+  return res.json({ ok: true, members: rows });
+});
+
 /** Member-parity calendar APIs for admin manual booking UI */
 router.get('/meeting-rooms/bookings/new', async (req, res) => {
   const prefillMemberId = isUuid(String(req.query.member_id || '').trim())
     ? String(req.query.member_id).trim()
     : '';
+  let prefillMemberLabel = '';
+  if (prefillMemberId) {
+    const { rows: pm } = await pool.query(
+      `SELECT full_name, email FROM members WHERE id = $1::uuid AND deleted_at IS NULL`,
+      [prefillMemberId]
+    );
+    if (pm[0]) {
+      prefillMemberLabel = `${pm[0].full_name || 'Member'} · ${pm[0].email || ''}`;
+    }
+  }
   let roomId = String(req.query.room_id || '').trim();
   const { rows: rooms } = await pool.query(
     `SELECT id, name FROM meeting_rooms WHERE deleted_at IS NULL AND active = true ORDER BY sort_order, name`
@@ -301,6 +346,7 @@ router.get('/meeting-rooms/bookings/new', async (req, res) => {
     tiers,
     formatNgn,
     prefillMemberId,
+    prefillMemberLabel,
     minBookDate: md[0].min_date,
     portalTzName: portalTz(),
     query: req.query,

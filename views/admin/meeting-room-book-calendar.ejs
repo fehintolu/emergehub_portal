@@ -18,13 +18,23 @@
         <% }); %>
       </select>
     </div>
-    <div class="form-row" style="margin:0;">
-      <label>Member ID</label>
-      <input name="member_id" id="mrb-admin-member-id" type="text" placeholder="Member UUID" style="min-width:280px;" value="<%= typeof prefillMemberId !== 'undefined' && prefillMemberId ? prefillMemberId : '' %>" autocomplete="off" />
+    <div class="form-row mrb-member-picker-wrap" style="margin:0;min-width:min(100%,360px);">
+      <label for="mrb-member-search-input">Member</label>
+      <input type="hidden" name="member_id" id="mrb-admin-member-id" value="<%= typeof prefillMemberId !== 'undefined' && prefillMemberId ? prefillMemberId : '' %>" />
+      <div class="mrb-member-picker">
+        <input
+          type="search"
+          id="mrb-member-search-input"
+          placeholder="Search name, email, or business…"
+          autocomplete="off"
+          value="<%= typeof prefillMemberLabel !== 'undefined' && prefillMemberLabel ? prefillMemberLabel : '' %>"
+        />
+        <ul class="mrb-member-suggest" id="mrb-member-suggest" role="listbox" hidden></ul>
+      </div>
     </div>
     <button type="submit" class="btn btn-secondary">Load room / member</button>
   </form>
-  <p class="page-lead" style="margin:8px 0 0;font-size:13px;">Same calendar and slot rules as the member portal. Estimates include tier discounts and <strong>plan meeting credits</strong> for the member above.</p>
+  <p class="page-lead" style="margin:8px 0 0;font-size:13px;">Same calendar and slot rules as the member portal. Estimates include tier discounts and <strong>plan meeting credits</strong> once you pick a member.</p>
 </div>
 
 <div class="card" style="margin-bottom:16px;">
@@ -120,6 +130,45 @@
 
 <style>
 .mrb-root { --mrb-brand: var(--brand); --mrb-accent: var(--accent); --mrb-border: var(--border); --mrb-muted: var(--text-secondary); }
+.mrb-member-picker { position: relative; width: 100%; }
+.mrb-member-picker input[type="search"] {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--border, #e0d8dd);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 14px;
+}
+.mrb-member-suggest {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 4px 0;
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  max-height: 260px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid var(--border-strong, #d8d0d6);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+}
+.mrb-member-suggest li {
+  padding: 10px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  border-bottom: 1px solid #f3f0f1;
+}
+.mrb-member-suggest li:last-child { border-bottom: none; }
+.mrb-member-suggest li:hover { background: rgba(97, 5, 54, 0.08); }
+.mrb-member-suggest .mrb-ms-sub {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted, #6b5c63);
+  margin-top: 3px;
+}
 .mrb-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .mrb-cal-nav { min-width: 40px; padding: 8px 12px; font-size: 18px; line-height: 1; }
 .mrb-cal-legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--text-secondary); margin-bottom: 10px; }
@@ -699,16 +748,105 @@
   });
 
   document.getElementById('mrb-admin-submit-form').addEventListener('submit', function (ev) {
+    var topHid = document.getElementById('mrb-admin-member-id');
+    document.getElementById('mrb-admin-member-hidden').value = topHid && topHid.value ? String(topHid.value).trim() : '';
     var hid = document.getElementById('mrb-admin-member-hidden').value.trim();
     var ok =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(hid);
     if (!ok) {
       ev.preventDefault();
-      alert('Enter a valid member UUID in the form above, then open Confirm again.');
+      alert('Search and select a member at the top, then confirm the booking again.');
       return false;
     }
   });
 
+  window.mrbRefreshBookingQuote = function () {
+    quoteSeq += 1;
+    updatePricePanel();
+  };
+
   loadMonth(calY, calM).catch(function () { el.grid.textContent = 'Could not load calendar.'; });
+})();
+</script>
+<script>
+(function () {
+  var hid = document.getElementById('mrb-admin-member-id');
+  var inp = document.getElementById('mrb-member-search-input');
+  var ul = document.getElementById('mrb-member-suggest');
+  if (!hid || !inp || !ul) return;
+
+  var debounceT = null;
+  function hideSuggest() {
+    ul.hidden = true;
+    ul.innerHTML = '';
+  }
+  function showSuggest(rows) {
+    ul.innerHTML = '';
+    if (!rows || !rows.length) {
+      hideSuggest();
+      return;
+    }
+    rows.forEach(function (m) {
+      var li = document.createElement('li');
+      li.setAttribute('role', 'option');
+      li.dataset.id = m.id;
+      var label = (m.full_name || 'Member') + ' · ' + (m.email || '');
+      li.dataset.label = label;
+      li.appendChild(document.createTextNode(label));
+      if (m.business_name) {
+        var sub = document.createElement('span');
+        sub.className = 'mrb-ms-sub';
+        sub.textContent = m.business_name;
+        li.appendChild(sub);
+      }
+      ul.appendChild(li);
+    });
+    ul.hidden = false;
+  }
+  function refreshQuote() {
+    if (typeof window.mrbRefreshBookingQuote === 'function') {
+      window.mrbRefreshBookingQuote();
+    }
+  }
+  inp.addEventListener('input', function () {
+    if (debounceT) clearTimeout(debounceT);
+    var q = inp.value.trim();
+    if (q === '') {
+      hid.value = '';
+      hideSuggest();
+      refreshQuote();
+      return;
+    }
+    debounceT = setTimeout(async function () {
+      try {
+        var res = await fetch('/admin/meeting-rooms/members-suggest?q=' + encodeURIComponent(q));
+        var data = await res.json();
+        if (!data.ok) {
+          hideSuggest();
+          return;
+        }
+        showSuggest(data.members || []);
+      } catch (e) {
+        hideSuggest();
+      }
+    }, 220);
+  });
+  ul.addEventListener('mousedown', function (ev) {
+    ev.preventDefault();
+  });
+  ul.addEventListener('click', function (ev) {
+    var li = ev.target.closest('li[data-id]');
+    if (!li) return;
+    hid.value = li.dataset.id;
+    inp.value = li.dataset.label || '';
+    hideSuggest();
+    refreshQuote();
+  });
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('.mrb-member-picker-wrap')) hideSuggest();
+  });
+  inp.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape') hideSuggest();
+  });
 })();
 </script>
