@@ -9,6 +9,9 @@
   <% if (typeof query !== 'undefined' && query.msg === 'test_flagged') { %>
     <div class="alert alert-success anim anim-1">Member marked as a test account.</div>
   <% } %>
+  <% if (typeof query !== 'undefined' && query.msg === 'test_unflagged') { %>
+    <div class="alert alert-success anim anim-1">Test flag removed. This member is now treated as a normal account (including in reports).</div>
+  <% } %>
   <% if (typeof query !== 'undefined' && query.msg === 'purged') { %>
     <div class="alert alert-success anim anim-1">
       Purged transactional data for <%= query.n || 0 %> test account(s).<% if (query.skipped) { %> <%= query.skipped %> id(s) were skipped (not test accounts).<% } %>
@@ -25,6 +28,9 @@
   <% } %>
   <% if (typeof query !== 'undefined' && query.err === 'test_flag_missing') { %>
     <div class="alert alert-error anim anim-1">No member found for that ID or email.</div>
+  <% } %>
+  <% if (typeof query !== 'undefined' && query.err === 'test_unflag_missing') { %>
+    <div class="alert alert-error anim anim-1">Could not remove test flag — member not found or not marked as a test account.</div>
   <% } %>
   <% if (typeof query !== 'undefined' && query.err === 'purge_none') { %>
     <div class="alert alert-error anim anim-1">Select at least one test account to purge.</div>
@@ -106,36 +112,43 @@
     <% if (!testMembers || !testMembers.length) { %>
       <p class="admin-settings-muted">No test accounts yet. Create one or flag an existing member.</p>
     <% } else { %>
-      <form method="post" action="/admin/settings/test-purge" onsubmit="return confirm('Purge all transactional data for the selected test accounts? Member logins and profile text stay; invoices, requests, files, etc. are removed.');">
-        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-        <div class="table-wrap">
-          <table class="data admin-settings-table">
-            <thead>
+      <div class="table-wrap">
+        <table class="data admin-settings-table">
+          <thead>
+            <tr>
+              <th style="width:36px;"></th>
+              <th>Member</th>
+              <th>Email</th>
+              <th>Invoices</th>
+              <th>Services</th>
+              <th>Tickets</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% testMembers.forEach(function (m) { %>
               <tr>
-                <th style="width:36px;"></th>
-                <th>Member</th>
-                <th>Email</th>
-                <th>Invoices</th>
-                <th>Services</th>
-                <th>Tickets</th>
-                <th></th>
+                <td><input type="checkbox" name="member_ids" value="<%= m.id %>" form="admin-test-purge-form" /></td>
+                <td><strong><%= m.full_name %></strong></td>
+                <td><%= m.email %></td>
+                <td><%= m.invoice_count %></td>
+                <td><%= m.sr_count %></td>
+                <td><%= m.ticket_count %></td>
+                <td style="white-space:nowrap;">
+                  <a href="/admin/members/<%= m.id %>">Open</a>
+                  <form method="post" action="/admin/settings/test-account/unflag" style="display:inline;margin-left:10px;" onsubmit="return confirm('Remove test flag from this member? They will be included in production reports and analytics.');">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                    <input type="hidden" name="member_id" value="<%= m.id %>" />
+                    <button type="submit" class="link-btn" style="padding:0;">Remove test flag</button>
+                  </form>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              <% testMembers.forEach(function (m) { %>
-                <tr>
-                  <td><input type="checkbox" name="member_ids" value="<%= m.id %>" /></td>
-                  <td><strong><%= m.full_name %></strong></td>
-                  <td><%= m.email %></td>
-                  <td><%= m.invoice_count %></td>
-                  <td><%= m.sr_count %></td>
-                  <td><%= m.ticket_count %></td>
-                  <td><a href="/admin/members/<%= m.id %>">Open</a></td>
-                </tr>
-              <% }); %>
-            </tbody>
-          </table>
-        </div>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+      <form id="admin-test-purge-form" method="post" action="/admin/settings/test-purge" onsubmit="return confirm('Purge all transactional data for the selected test accounts? Member logins and profile text stay; invoices, requests, files, etc. are removed.');">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
         <button type="submit" class="btn btn-secondary" style="margin-top:14px;border-color:var(--orange);color:var(--orange);">Purge selected</button>
       </form>
     <% } %>

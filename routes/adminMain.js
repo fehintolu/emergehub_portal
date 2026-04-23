@@ -2499,6 +2499,22 @@ router.post('/settings/test-account/flag', requireValidCsrf, requireSuperAdmin, 
   res.redirect('/admin/settings?tab=test-data&msg=test_flagged');
 });
 
+router.post('/settings/test-account/unflag', requireValidCsrf, requireSuperAdmin, async (req, res) => {
+  const memberId = String(req.body.member_id || '').trim();
+  if (!memberId || !isUuid(memberId)) {
+    return res.redirect('/admin/settings?tab=test-data&err=test_unflag_missing');
+  }
+  const { rowCount } = await pool.query(
+    `UPDATE members SET is_test_account = false, updated_at = now()
+     WHERE id = $1::uuid AND deleted_at IS NULL AND is_test_account = true`,
+    [memberId]
+  );
+  if (!rowCount) {
+    return res.redirect('/admin/settings?tab=test-data&err=test_unflag_missing');
+  }
+  res.redirect('/admin/settings?tab=test-data&msg=test_unflagged');
+});
+
 router.post('/settings/test-purge', requireValidCsrf, requireSuperAdmin, async (req, res) => {
   const raw = req.body.member_ids;
   const ids = Array.isArray(raw) ? raw : raw ? [raw] : [];
